@@ -387,6 +387,8 @@ char * uftrace_strerror(int errnum, char *buf, size_t buflen);
 
 void stacktrace(void);
 
+ssize_t list_files(const char* directory, char** result);
+
 #define ASSERT(cond) 							\
 	if (unlikely(!(cond))) { 					\
 		pr_red("%s:%d: %s: ASSERT `%s' failed.\n",		\
