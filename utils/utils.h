@@ -354,6 +354,7 @@ bool check_time_range(struct uftrace_time_range *range, uint64_t timestamp);
 uint64_t parse_time(char *arg, int limited_digits);
 uint64_t parse_timestamp(char *arg);
 
+void str_merge_syms(char* base, char* new, size_t base_size);
 char * strjoin(char *left, char *right, const char *delim);
 char * json_quote(char *str, int *len);
 

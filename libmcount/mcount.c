@@ -767,6 +767,7 @@ void *command_daemon(void *arg)
 	pid_t pid;
 	char *channel = NULL;
 	char buf[MCOUNT_DOPT_SIZE];
+	char dyn_args_str[MCOUNT_DOPT_SIZE], dyn_retval_str[MCOUNT_DOPT_SIZE];
 	bool close_connection, kill_daemon;
 	bool daemon_error = false;
 	bool disabled;
@@ -903,6 +904,30 @@ void *command_daemon(void *arg)
 				pthread_rwlock_unlock(&tree_rwlock);
 				break;
 
+			case UFTRACE_DOPT_ARGUMENT:
+				if (read(cfd, buf, MCOUNT_DOPT_SIZE) == -1)
+					pr_err("error reading option");
+				pthread_rwlock_wrlock(&tree_rwlock);
+				uftrace_setup_argument(buf,
+									   &symtabs,
+									   &mcount_triggers,
+									   &filter_setting);
+				pthread_rwlock_unlock(&tree_rwlock);
+				str_merge_syms(dyn_args_str, buf, MCOUNT_DOPT_SIZE);
+				break;
+
+			case UFTRACE_DOPT_RETVAL:
+				if (read(cfd, buf, MCOUNT_DOPT_SIZE) == -1)
+					pr_err("error reading option");
+				pthread_rwlock_wrlock(&tree_rwlock);
+				uftrace_setup_retval(buf,
+									 &symtabs,
+									 &mcount_triggers,
+									 &filter_setting);
+				pthread_rwlock_unlock(&tree_rwlock);
+				str_merge_syms(dyn_retval_str, buf, MCOUNT_DOPT_SIZE);
+				break;
+
 			case UFTRACE_DOPT_WATCH:
 				if (read(cfd, buf, MCOUNT_DOPT_SIZE) == -1)
 					pr_err("error reading option");
@@ -933,6 +958,14 @@ void *command_daemon(void *arg)
 		}
 	}
 
+	/* Tell uftrace these options changed before it saves the original options
+	 * to disk. */
+	uftrace_send_message(UFTRACE_MSG_SEND_ARGS,
+			dyn_args_str,
+			strlen(dyn_args_str));
+	uftrace_send_message(UFTRACE_MSG_SEND_RETVAL,
+			dyn_retval_str,
+			strlen(dyn_retval_str));
 mcount_daemon_fail:
 	unlink(channel);
 	free(channel);

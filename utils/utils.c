@@ -6,6 +6,7 @@
 #include <errno.h>
 #include <sys/uio.h>
 #include <sys/stat.h>
+#include <string.h>
 #include <libgen.h>
 
 #ifdef HAVE_LIBUNWIND
@@ -562,6 +563,30 @@ uint64_t parse_timestamp(char *arg)
 	}
 
 	return ts;
+}
+
+void str_merge_syms(char* base, char* new, size_t base_size)
+{
+	int i;
+	char *symb;
+	struct strv symbs = STRV_INIT;
+
+	strv_split(&symbs, new, ",");
+	strv_for_each(&symbs, symb, i) {
+		if (strstr(base, symb) == NULL) {
+			if (strlen(base) + strlen(symb) > base_size) {
+				pr_warn("cannot merge symbols: buffer too small\n");
+				break;
+			}
+			if (strlen(base) > 0)
+				strcat(base, ",");
+			strcat(base, symb);
+		}
+	}
+
+	strv_free(&symbs);
+
+	return;
 }
 
 /**
