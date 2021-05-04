@@ -22,6 +22,7 @@
 #define MCOUNT_INVALID_DYNIDX  0xefefefef
 
 #define MCOUNT_DAEMON_SOCKET_DIR "/tmp/uftrace"
+#define MCOUNT_DOPT_SIZE       4096
 
 enum mcount_rstack_flag {
 	MCOUNT_FL_SETJMP	= (1U << 0),
