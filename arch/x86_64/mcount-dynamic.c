@@ -715,10 +715,23 @@ static unsigned long get_target_addr(struct mcount_dynamic_info *mdi, unsigned l
 	return mdi->trampoline - (addr + CALL_INSN_SIZE);
 }
 
-static int patch_fentry_code(struct mcount_dynamic_info *mdi, struct sym *sym)
+static uint8_t fentry_temporary_jump[2] = {
+	/* 2-bytes jump */
+	0xeb, 0x03,
+};
+
+static int patch_fentry_func(struct mcount_dynamic_info *mdi, struct sym *sym)
 {
-	unsigned char *insn = (void *)sym->addr + mdi->map->start;
+	uint8_t *insn = (void *)sym->addr + mdi->map->start;
 	unsigned int target_addr;
+
+	uint8_t patch[5] = {
+		/* 4-bytes call instruction opcode */
+		0xe8,
+
+		/* 4-bytes call target address */
+		0x00, 0x00, 0x00, 0x00,
+	};
 
 	/* support patchable function entry and __fentry__ at the beginning */
 	if (memcmp(insn, patchable_gcc_nop, sizeof(patchable_gcc_nop)) &&
@@ -733,27 +746,48 @@ static int patch_fentry_code(struct mcount_dynamic_info *mdi, struct sym *sym)
 	target_addr = get_target_addr(mdi, (unsigned long)insn);
 	if (target_addr == 0)
 		return INSTRUMENT_SKIPPED;
+	memcpy(&patch[1], &target_addr, sizeof(target_addr));
 
-	/* make a "call" insn with 4-byte offset */
-	insn[0] = 0xe8;
-	/* hopefully we're not patching 'memcpy' itself */
-	memcpy(&insn[1], &target_addr, sizeof(target_addr));
+	/* atomically replace the first 2-bytes of the NOP with our temporary jump */
+	__atomic_store((uint16_t*)insn, (uint16_t*)fentry_temporary_jump, __ATOMIC_SEQ_CST);
 
-	pr_dbg3("update %p for '%s' function dynamically to call __fentry__\n",
+	serialize_instruction_cache();
+
+	/* write the 3 last bytes of the call */
+	memcpy(&insn[2], &patch[2], sizeof(patch) - 2);
+
+	/* atomically replace the temporary jump with the other 2-bytes of the call */
+	__atomic_store((uint16_t*)insn, (uint16_t*)patch, __ATOMIC_SEQ_CST);
+
+	pr_dbg3("dynamically enable fentry tracepoint at %p for '%s' function\n",
 		insn, sym->name);
 
 	return INSTRUMENT_SUCCESS;
 }
 
-static int patch_fentry_func(struct mcount_dynamic_info *mdi, struct sym *sym)
+static int unpatch_fentry_nop_func(struct mcount_dynamic_info *mdi, struct sym *sym)
 {
-	return patch_fentry_code(mdi, sym);
+	uint8_t *insn = (void *)sym->addr + mdi->map->start;
+
+	/* atomically replace the first 2-bytes of the call with our temporary jump */
+	__atomic_store((uint16_t*)insn, (uint16_t*)fentry_temporary_jump, __ATOMIC_SEQ_CST);
+
+	serialize_instruction_cache();
+
+	/* write the 3 last bytes of the NOP */
+	memcpy(&insn[2], &fentry_nop_patt2[2], sizeof(fentry_nop_patt2) - 2);
+
+	/* atomically replace the temporary jump with the other 2-bytes of the NOP */
+	__atomic_store((uint16_t*)insn, (uint16_t*)fentry_nop_patt2, __ATOMIC_SEQ_CST);
+
+	pr_dbg3("dynamically disabled '%s' fentry tracepoint\n", sym->name);
+	return INSTRUMENT_SUCCESS;
 }
 
 static int patch_patchable_func(struct mcount_dynamic_info *mdi, struct sym *sym)
 {
 	/* it does the same patch logic with fentry. */
-	return patch_fentry_code(mdi, sym);
+	return patch_fentry_func(mdi, sym);
 }
 
 static uint8_t xray_unpatched_entry[2] = {
@@ -1295,6 +1329,10 @@ int mcount_unpatch_func(struct mcount_dynamic_info *mdi, struct sym *sym,
 
 	case DYNAMIC_FENTRY:
 		result = unpatch_fentry_func(mdi, sym);
+		break;
+
+	case DYNAMIC_FENTRY_NOP:
+		result = unpatch_fentry_nop_func(mdi, sym);
 		break;
 
 	case DYNAMIC_PG:
