@@ -251,8 +251,18 @@ __weak int mcount_patch_func(struct mcount_dynamic_info *mdi, struct sym *sym,
 	return -1;
 }
 
+__weak int mcount_patched_funcs_finish(void)
+{
+	return -1;
+}
+
 __weak int mcount_unpatch_func(struct mcount_dynamic_info *mdi, struct sym *sym,
 			       struct mcount_disasm_engine *disasm)
+{
+	return -1;
+}
+
+__weak int mcount_unpatched_funcs_finish(void)
 {
 	return -1;
 }
@@ -662,6 +672,9 @@ static void update_normal_func_matched(struct mcount_dynamic_info *mdi,
 
 		mcount_update_func(mdi, map, sym, soname, &found);
 	}
+
+	mcount_patched_funcs_finish();
+	mcount_unpatched_funcs_finish();
 
 	if (!found)
 		stats.nomatch++;
