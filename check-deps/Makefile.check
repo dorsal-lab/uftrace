@@ -77,6 +77,11 @@ ifneq ($(wildcard $(objdir)/check-deps/have_libcapstone),)
   COMMON_LDFLAGS += $(shell pkg-config --libs capstone 2> /dev/null)
 endif
 
+ifneq ($(wildcard $(objdir)/check-deps/have_lttng),)
+  LIB_CFLAGS  += -DHAVE_LTTNG_UST -DLTTNG_UST_COMPAT_API_VERSION=0
+  LIB_LDFLAGS += -llttng-ust
+endif
+
 ifneq ($(wildcard $(objdir)/check-deps/cc_has_minline_all_stringops),)
   LIB_CFLAGS += -minline-all-stringops
 endif

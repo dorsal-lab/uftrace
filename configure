@@ -33,6 +33,7 @@ usage() {
   --without-libncurses  build without libncursesw            (even if found on the system)
   --without-libunwind   build without libunwind              (even if found on the system)
   --without-capstone    build without libcapstone            (even if found on the system)
+  --without-lttng       build without lttng                  (even if found on the system)
   --without-perf        build without perf event             (even if available)
   --without-schedule    build without scheduler event        (even if available)
   --without-daemon      build without daemon feature
@@ -193,6 +194,7 @@ for dep in $IGNORE; do
         libunwind)   TARGET=have_libunwind     ;;
         libstdc++)   TARGET=cxa_demangle       ;;
         capstone)    TARGET=have_libcapstone   ;;
+        lttng)       TARGET=have_lttng         ;;
         perf*)       TARGET=perf_clockid       ;;
         sched*)      TARGET=perf_context_switch;;
         daemon)      TARGET=daemonize          ;;
@@ -264,6 +266,7 @@ print_feature "schedule" "perf_context_switch" "scheduler event support"
 print_feature "capstone" "have_libcapstone" "full dynamic tracing support"
 print_feature "libunwind" "have_libunwind" "libunwind support"
 print_feature "daemon" "daemonize" "mcount daemon support"
+print_feature "lttng" "have_lttng" "lttng-ust support"
 
 cat >$output <<EOF
 # this file is generated automatically
