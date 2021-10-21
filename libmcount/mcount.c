@@ -768,6 +768,7 @@ void *command_daemon(void *arg)
 	char *channel = NULL;
 	char buf[MCOUNT_DOPT_SIZE];
 	char dyn_args_str[MCOUNT_DOPT_SIZE], dyn_retval_str[MCOUNT_DOPT_SIZE];
+	char *patch_str, *unpatch_str;
 	bool close_connection, kill_daemon;
 	bool daemon_error = false;
 	bool disabled;
@@ -867,6 +868,37 @@ void *command_daemon(void *arg)
 				if (read(cfd, &mcount_threshold,
 						 sizeof(typeof(mcount_threshold))) == -1)
 					pr_err("error reading option");
+				break;
+
+			case UFTRACE_DOPT_UPDATE:
+				if (read(cfd, buf, MCOUNT_DOPT_SIZE) == -1)
+					pr_err("error reading option");
+				if (strlen(buf) == 0) {
+					patch_str = NULL;
+				}
+				else {
+					patch_str = xmalloc(sizeof(buf));
+					strcpy(patch_str, buf);
+				}
+
+				if (read(cfd, buf, MCOUNT_DOPT_SIZE) == -1)
+					pr_err("error reading option");
+				if (strlen(buf) == 0) {
+					unpatch_str = NULL;
+				}
+				else {
+					unpatch_str = xmalloc(sizeof(buf));
+					strcpy(unpatch_str, buf);
+				}
+
+				if (mcount_dynamic_update(&symtabs,
+								patch_str,
+								unpatch_str,
+								PATT_REGEX) < 0) {
+					pr_dbg("mcount_dynamic_update failed\n");
+				} else {
+					pr_dbg("mcount_dynamic_update success\n");
+				}
 				break;
 
 			case UFTRACE_DOPT_FILTER: /* -F or -N */

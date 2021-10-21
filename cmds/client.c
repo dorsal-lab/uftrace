@@ -206,6 +206,25 @@ int command_client(int argc, char *argv[], struct opts *opts)
 			pr_err("error sending options");
 	}
 
+	if (opts->patch || opts->unpatch) {
+		char *patch_str, *unpatch_str;
+
+		send_option(sfd, UFTRACE_DOPT_UPDATE);
+		pr_dbg3("changing patch options\n");
+
+		patch_str = opts->patch ? opts->patch : "";
+		unpatch_str = opts->unpatch ? opts->unpatch : "";
+
+		strcpy(command, patch_str);
+		if (write(sfd, &command, MCOUNT_DOPT_SIZE) == -1)
+			pr_err("error sending options");
+
+		strcpy(command, unpatch_str);
+		if (write(sfd, &command, MCOUNT_DOPT_SIZE) == -1)
+			pr_err("error sending options");
+	}
+
+
 	if (opts->daemon_kill)
 		send_option(sfd, UFTRACE_DOPT_KILL);
 	else
