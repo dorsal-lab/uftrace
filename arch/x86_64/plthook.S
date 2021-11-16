@@ -6,9 +6,11 @@ ENTRY(plt_hooker)
 	.cfi_startproc
 	/* PLT code already pushed symbol and module indices */
 	.cfi_adjust_cfa_offset 16
-	sub $48, %rsp
-	.cfi_adjust_cfa_offset 48
+	sub $112, %rsp
+	.cfi_adjust_cfa_offset 112
 
+	vmovdqu %ymm0, 80(%rsp)
+    vmovdqu %ymm1, 48(%rsp)
 	/* save register arguments in mcount_args */
 	movq %rdi, 40(%rsp)
 	movq %rsi, 32(%rsp)
@@ -18,13 +20,13 @@ ENTRY(plt_hooker)
 	movq %r9,   0(%rsp)
 
 	/* module id */
-	movq 48(%rsp), %rdx
+	movq 112(%rsp), %rdx
 
 	/* child idx */
-	movq 56(%rsp), %rsi
+	movq 120(%rsp), %rsi
 
 	/* parent location */
-	leaq 64(%rsp), %rdi
+	leaq 128(%rsp), %rdi
 
 	/* mcount_args */
 	movq %rsp, %rcx
@@ -47,6 +49,7 @@ ENTRY(plt_hooker)
 	movq %rcx, %rsp
 	.cfi_def_cfa_register rsp
 
+	
 	/* restore mcount_args */
 	movq  0(%rsp), %r9
 	movq  8(%rsp), %r8
@@ -55,8 +58,11 @@ ENTRY(plt_hooker)
 	movq 32(%rsp), %rsi
 	movq 40(%rsp), %rdi
 
-	add $48, %rsp
-	.cfi_adjust_cfa_offset -48
+	vmovdqu 48(%rsp), %ymm1
+    vmovdqu 80(%rsp), %ymm0
+
+	add $112, %rsp
+	.cfi_adjust_cfa_offset -112
 
 	cmpq $0, %r11
 	cmovz plthook_resolver_addr(%rip), %r11
