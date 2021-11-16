@@ -50,6 +50,28 @@ struct code_page {
 	bool			frozen;
 };
 
+static Hashmap* sym_patched = NULL;
+
+static inline int register_sym_patched(char* name) {
+	return (hashmap_put(sym_patched, name, (void*) true) == NULL) ? -1 : 0;
+}
+
+static inline int register_sym_unpatched(char* name) {
+	return (hashmap_put(sym_patched, name, (void*) false) == NULL) ? -1 : 0;
+}
+
+static inline bool is_sym_registered(char* name) {
+	return hashmap_contains_key(sym_patched, name);
+}
+
+static inline bool is_sym_patched(char* name) {
+	if (!is_sym_registered(name)) {
+		return false;
+	}
+
+	return (bool) hashmap_get(sym_patched, name);
+}
+
 static LIST_HEAD(code_pages);
 
 static struct Hashmap *code_hmap;
@@ -556,6 +578,7 @@ static void mcount_patch_func_with_stats(struct mcount_dynamic_info *mdi,
 		stats.skipped++;
 		break;
 	case INSTRUMENT_SUCCESS:
+		register_sym_patched(sym->name);
 	default:
 		break;
 	}
@@ -677,6 +700,12 @@ static int do_dynamic_update(struct symtabs *symtabs, char *patch_funcs,
 	fill_pattern_list(&patch_patterns, patch_funcs, unpatch_funcs, def_mod, ptype);
 	fill_pattern_list(&unpatch_patterns, unpatch_funcs, patch_funcs, def_mod, ptype);
 
+	stats.total = 0;
+	stats.failed = 0;
+	stats.skipped = 0;
+	stats.nomatch = 0;
+	stats.unpatch = 0;
+
 	for_each_map(symtabs, map) {
 		struct mcount_dynamic_info *mdi;
 
@@ -737,6 +766,11 @@ int mcount_dynamic_init(struct symtabs *symtabs, char *patch_str,
 	hash_size = symtabs->exec_map->mod->symtab.nr_sym * 3 / 4;
 	code_hmap = hashmap_create(hash_size, hashmap_ptr_hash, hashmap_ptr_equals);
 	if (code_hmap == NULL) {
+		return -1;
+	}
+
+	sym_patched = hashmap_create(10, hashmap_ptr_hash, hashmap_ptr_equals);
+	if (sym_patched == NULL) {
 		return -1;
 	}
 
