@@ -565,6 +565,15 @@ uint64_t parse_timestamp(char *arg)
 	return ts;
 }
 
+/* do not use floating-point in libmcount */
+int calc_percent(int n, int total, int *rem)
+{
+	int quot = 100 * n / total;
+
+	*rem = (100 * n - quot * total) * 100 / total;
+	return quot;
+}
+
 void str_merge_syms(char* base, char* new, size_t base_size)
 {
 	int i;

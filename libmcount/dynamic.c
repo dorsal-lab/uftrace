@@ -743,15 +743,6 @@ static int do_dynamic_update(struct symtabs *symtabs, char *patch_funcs,
 	return 0;
 }
 
-/* do not use floating-point in libmcount */
-static int calc_percent(int n, int total, int *rem)
-{
-	int quot = 100 * n / total;
-
-	*rem = (100 * n - quot * total) * 100 / total;
-	return quot;
-}
-
 __weak int mcount_dynamic_init_arch(void) {
 	return 0;
 }
