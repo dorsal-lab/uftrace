@@ -508,7 +508,15 @@ static bool skip_sym(struct sym *sym, struct mcount_dynamic_info *mdi,
 static void mcount_patch_func_with_stats(struct mcount_dynamic_info *mdi,
 					 struct sym *sym)
 {
-	switch (mcount_patch_func(mdi, sym, &disasm, min_size)) {
+	int result;
+	struct timespec start, end;
+	long long latency;
+
+	clock_gettime(CLOCK_MONOTONIC, &start);
+	result = mcount_patch_func(mdi, sym, &disasm, min_size);
+	clock_gettime(CLOCK_MONOTONIC, &end);
+
+	switch (result) {
 	case INSTRUMENT_FAILED:
 		stats.failed++;
 		break;
@@ -516,6 +524,9 @@ static void mcount_patch_func_with_stats(struct mcount_dynamic_info *mdi,
 		stats.skipped++;
 		break;
 	case INSTRUMENT_SUCCESS:
+		latency = (end.tv_sec - start.tv_sec) * 1000000000
+			+ (end.tv_nsec - start.tv_nsec);
+		pr_dbg4("patching latency %lld ns\n", latency);
 	default:
 		break;
 	}
