@@ -673,15 +673,6 @@ static void freeze_dynamic_update(void)
 	mcount_freeze_code();
 }
 
-/* do not use floating-point in libmcount */
-static int calc_percent(int n, int total, int *rem)
-{
-	int quot = 100 * n / total;
-
-	*rem = (100 * n - quot * total) * 100 / total;
-	return quot;
-}
-
 int mcount_dynamic_update(struct symtabs *symtabs, char *patch_funcs,
 			  enum uftrace_pattern_type ptype)
 {

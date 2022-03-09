@@ -541,6 +541,15 @@ uint64_t parse_timestamp(char *arg)
 	return ts;
 }
 
+/* do not use floating-point in libmcount */
+int calc_percent(int n, int total, int *rem)
+{
+	int quot = 100 * n / total;
+
+	*rem = (100 * n - quot * total) * 100 / total;
+	return quot;
+}
+
 /**
  * strjoin - join two strings with a delimiter
  * @left:  string buffer to join (dynamic allocated, can be NULL)
