@@ -19,6 +19,8 @@ struct disasm_check_data {
 	uint32_t		size;
 };
 
+extern struct mcount_arch_patch_stats patch_stats;
+
 void mcount_disasm_init(struct mcount_disasm_engine *disasm)
 {
 	if (cs_open(CS_ARCH_X86, CS_MODE_64, &disasm->engine) != CS_ERR_OK) {
@@ -52,12 +54,18 @@ void print_instrument_fail_msg(int reason)
 {
 	if (reason & INSTRUMENT_FAIL_RELJMP) {
 		pr_dbg3("prologue has relative jump\n");
+		patch_stats.fail_reljmp++;
 	}
 	if (reason & INSTRUMENT_FAIL_RELCALL) {
 		pr_dbg3("prologue has (relative) call\n");
+		patch_stats.fail_relcall++;
 	}
 	if (reason & INSTRUMENT_FAIL_PIC) {
 		pr_dbg3("prologue has PC-relative addressing\n");
+		patch_stats.fail_pic++;
+	}
+	if (reason & INSTRUMENT_FAIL_NO_DETAIL) {
+		patch_stats.fail_nodetail++;
 	}
 }
 
@@ -505,8 +513,10 @@ static bool check_unsupported(struct mcount_disasm_engine *disasm,
 	unsigned long target;
 	bool jump = false;
 
-	if (detail == NULL)
+	if (detail == NULL) {
+		patch_stats.fail_unsupported_nodetail++;
 		return false;
+	}
 
 	detail = insn->detail;
 
@@ -534,6 +544,7 @@ static bool check_unsupported(struct mcount_disasm_engine *disasm,
 				pr_dbg4("jump to prologue: addr=%lx, target=%lx\n",
 					insn->address - mdi->map->start,
 					target - mdi->map->start);
+				patch_stats.fail_proljmp++;
 				return false;
 			}
 
@@ -550,6 +561,7 @@ static bool check_unsupported(struct mcount_disasm_engine *disasm,
 				pr_dbg4("jump to middle of function: addr=%lx, target=%lx\n",
 					insn->address - mdi->map->start,
 					target - mdi->map->start);
+				patch_stats.fail_funjmp++;
 				return false;
 			}
 			break;
@@ -575,6 +587,7 @@ int disasm_check_insns(struct mcount_disasm_engine *disasm,
 	badsym = mcount_find_badsym(mdi, info->addr);
 	if (badsym != NULL) {
 		badsym->reverted = true;
+		patch_stats.fail_badsym++;
 		return INSTRUMENT_FAILED;
 	}
 
@@ -584,23 +597,29 @@ int disasm_check_insns(struct mcount_disasm_engine *disasm,
 	 * to skip those functions and allow the original function.
 	 */
 	size = strlen(info->sym->name);
-	if (size > 5 && !strcmp(info->sym->name + size - 5, ".cold"))
+	if (size > 5 && !strcmp(info->sym->name + size - 5, ".cold")) {
+		patch_stats.skip_cold++;
 		return INSTRUMENT_SKIPPED;
+	}
 
 	size = info->sym->size;
 	if (!memcmp((void *)info->addr, endbr64, sizeof(endbr64))) {
 		addr += sizeof(endbr64);
 		size -= sizeof(endbr64);
 
-		if (size <= CALL_INSN_SIZE)
+		if (size <= CALL_INSN_SIZE) {
+			patch_stats.skip_callsize++;
 			return INSTRUMENT_SKIPPED;
+		}
 
 		info->has_intel_cet = true;
 	}
 
 	count = cs_disasm(disasm->engine, (void *)addr, size, addr, 0, &insn);
-	if (count == 0)
+	if (count == 0) {
+		patch_stats.fail_capstone++;
 		return INSTRUMENT_FAILED;
+	}
 
 	for (i = 0; i < count; i++) {
 		uint8_t insns_byte[32] = { 0, };

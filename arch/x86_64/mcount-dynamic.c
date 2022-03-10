@@ -17,6 +17,14 @@ static const unsigned char fentry_nop_patt2[] = { 0x0f, 0x1f, 0x44, 0x00, 0x00 }
 static const unsigned char patchable_gcc_nop[] = { 0x90, 0x90, 0x90, 0x90, 0x90 };
 static const unsigned char patchable_clang_nop[] = { 0x0f, 0x1f, 0x44, 0x00, 0x08 };
 
+struct mcount_arch_patch_stats patch_stats;
+
+void mcount_arch_reset_patch_stats()
+{
+	memset(&patch_stats, 0, sizeof(patch_stats));
+}
+
+
 int mcount_setup_trampoline(struct mcount_dynamic_info *mdi)
 {
 	unsigned char trampoline[] = { 0x3e, 0xff, 0x25, 0x01, 0x00, 0x00, 0x00, 0xcc };
@@ -599,8 +607,10 @@ int mcount_patch_func(struct mcount_dynamic_info *mdi, struct sym *sym,
 	if (min_size < CALL_INSN_SIZE + 1)
 		min_size = CALL_INSN_SIZE + 1;
 
-	if (sym->size < min_size)
+	if (sym->size < min_size) {
+		patch_stats.skip_minsize++;
 		return result;
+	}
 
 	switch (mdi->type) {
 	case DYNAMIC_XRAY:
@@ -744,4 +754,57 @@ void mcount_arch_patch_branch(struct mcount_disasm_info *info,
 
 		entry_offset += ARCH_BRANCH_ENTRY_SIZE;
 	}
+}
+
+void mcount_arch_print_patch_fail_statistics() {
+	/* FIXME event can have multiple failure reasons, total is wrong */
+	int total = patch_stats.fail_badsym +
+		patch_stats.fail_capstone +
+		patch_stats.fail_nodetail +
+		patch_stats.fail_reljmp +
+		patch_stats.fail_relcall +
+		patch_stats.fail_pic +
+		patch_stats.fail_unsupported_nodetail +
+		patch_stats.fail_proljmp +
+		patch_stats.fail_funjmp;
+	int r, q;
+
+	if (!total)
+		return;
+
+	pr_dbg2("         total: %8d\n", total);
+	q = calc_percent(patch_stats.fail_badsym, total, &r);
+	pr_dbg2("        badsym: %8d (%3d.%02d%%)\n", patch_stats.fail_badsym, q, r);
+	q = calc_percent(patch_stats.fail_capstone, total, &r);
+	pr_dbg2("      capstone: %8d (%3d.%02d%%)\n", patch_stats.fail_capstone, q, r);
+	q = calc_percent(patch_stats.fail_nodetail, total, &r);
+	pr_dbg2("     no detail: %8d (%3d.%02d%%)\n", patch_stats.fail_nodetail, q, r);
+	q = calc_percent(patch_stats.fail_unsupported_nodetail, total, &r);
+	pr_dbg2("   no detail 2: %8d (%3d.%02d%%)\n", patch_stats.fail_unsupported_nodetail, q, r);
+	q = calc_percent(patch_stats.fail_reljmp, total, &r);
+	pr_dbg2(" relative jump: %8d (%3d.%02d%%)\n", patch_stats.fail_reljmp, q, r);
+	q = calc_percent(patch_stats.fail_relcall, total, &r);
+	pr_dbg2(" relative call: %8d (%3d.%02d%%)\n", patch_stats.fail_relcall, q, r);
+	q = calc_percent(patch_stats.fail_pic, total, &r);
+	pr_dbg2("           pic: %8d (%3d.%02d%%)\n", patch_stats.fail_pic, q, r);
+	q = calc_percent(patch_stats.fail_proljmp, total, &r);
+	pr_dbg2(" jump prologue: %8d (%3d.%02d%%)\n", patch_stats.fail_proljmp, q, r);
+	q = calc_percent(patch_stats.fail_funjmp, total, &r);
+	pr_dbg2(" jump function: %8d (%3d.%02d%%)\n", patch_stats.fail_funjmp, q, r);
+}
+
+void mcount_arch_print_patch_skip_statistics() {
+	int total = patch_stats.skip_cold + patch_stats.skip_minsize + patch_stats.skip_callsize;
+	int r, q;
+
+	if (!total)
+		return;
+
+	pr_dbg2("         total: %8d\n", total);
+	q = calc_percent(patch_stats.skip_cold, total, &r);
+	pr_dbg2("          cold: %8d (%3d.%02d%%)\n", patch_stats.skip_cold, q, r);
+	q = calc_percent(patch_stats.skip_minsize, total, &r);
+	pr_dbg2("      min size: %8d (%3d.%02d%%)\n", patch_stats.skip_minsize, q, r);
+	q = calc_percent(patch_stats.skip_callsize, total, &r);
+	pr_dbg2("     call size: %8d (%3d.%02d%%)\n", patch_stats.skip_callsize, q, r);
 }
