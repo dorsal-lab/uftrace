@@ -622,6 +622,8 @@ static int do_dynamic_update(struct symtabs *symtabs, char *patch_funcs,
 {
 	struct uftrace_mmap *map;
 	char *def_mod;
+	struct timespec start, end;
+	long long duration;
 
 	if (patch_funcs == NULL)
 		return 0;
@@ -629,6 +631,7 @@ static int do_dynamic_update(struct symtabs *symtabs, char *patch_funcs,
 	def_mod = basename(symtabs->exec_map->libname);
 	parse_pattern_list(patch_funcs, def_mod, ptype);
 
+	clock_gettime(CLOCK_MONOTONIC, &start);
 	for_each_map(symtabs, map) {
 		struct mcount_dynamic_info *mdi;
 
@@ -639,6 +642,10 @@ static int do_dynamic_update(struct symtabs *symtabs, char *patch_funcs,
 
 		patch_func_matched(mdi, map);
 	}
+	clock_gettime(CLOCK_MONOTONIC, &end);
+
+	duration = (end.tv_sec - start.tv_sec) * 1000000000 + end.tv_nsec - start.tv_nsec;
+	pr_dbg3("patching duration: %lld ns\n", duration);
 
 	if (stats.failed + stats.skipped + stats.nomatch == 0) {
 		pr_dbg("patched all (%d) functions in '%s'\n",
