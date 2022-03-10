@@ -295,6 +295,18 @@ __weak void mcount_arch_patch_branch(struct mcount_disasm_info *info,
 {
 }
 
+__weak void mcount_arch_reset_patch_stats()
+{
+}
+
+__weak void mcount_arch_print_patch_fail_statistics()
+{
+}
+
+__weak void mcount_arch_print_patch_skip_statistics()
+{
+}
+
 struct find_module_data {
 	struct symtabs *symtabs;
 	bool needs_modules;
@@ -794,6 +806,7 @@ int mcount_dynamic_update(struct symtabs *symtabs, char *patch_funcs,
 	mcount_disasm_init(&disasm);
 	load_modules_dynamic_info(symtabs, needs_modules);
 
+	mcount_arch_reset_patch_stats();
 	ret = do_dynamic_update(symtabs, patch_funcs, unpatch_funcs, ptype);
 
 	if (stats.total && stats.failed) {
@@ -807,8 +820,10 @@ int mcount_dynamic_update(struct symtabs *symtabs, char *patch_funcs,
 		pr_dbg(" patched: %8d (%2d.%02d%%)\n", success, q, r);
 		q = calc_percent(stats.failed, stats.total, &r);
 		pr_dbg("  failed: %8d (%2d.%02d%%)\n", stats.failed, q, r);
+		mcount_arch_print_patch_fail_statistics();
 		q = calc_percent(stats.skipped, stats.total, &r);
 		pr_dbg(" skipped: %8d (%2d.%02d%%)\n", stats.skipped, q, r);
+		mcount_arch_print_patch_skip_statistics();
 		pr_dbg("no match: %8d\n", stats.nomatch);
 	}
 
