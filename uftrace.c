@@ -121,6 +121,7 @@ __used static const char uftrace_usage[] =
 "   replay          Show program execution in the trace data\n"
 "   report          Show performance statistics in the trace data\n"
 "   live            Do record and replay in a row (default)\n"
+"   client          Send commands to a running mcount instance\n"
 "   info            Show system and program info in the trace data\n"
 "   dump            Show low-level trace data\n"
 "   recv            Save the trace data from network\n"
@@ -201,6 +202,7 @@ __used static const char uftrace_help[] =
 "      --port=PORT            Use PORT for network connection (default: "
 	stringify(UFTRACE_RECV_PORT) ")\n"
 "  -P, --patch=FUNC           Apply dynamic patching for FUNCs\n"
+"  -p, --pid=PID              PID of the uftrace daemon\n"
 "      --record               Record a new trace data before running command\n"
 "      --report               Show live report\n"
 "      --rt-prio=PRIO         Record with real-time (FIFO) priority\n"
@@ -242,7 +244,7 @@ __used static const char uftrace_footer[] =
 "\n";
 
 static const char uftrace_shopts[] =
-	"+aA:b:C:d:D:eE:f:F:hH:kK:lN:P:r:R:s:S:t:T:U:vVW:Z:";
+	"+aA:b:C:d:D:eE:f:F:hH:kK:lN:p:P:r:R:s:S:t:T:U:vVW:Z:";
 
 #define REQ_ARG(name, shopt) { #name, required_argument, 0, shopt }
 #define NO_ARG(name, shopt)  { #name, no_argument, 0, shopt }
@@ -704,6 +706,10 @@ static int parse_option(struct opts *opts, int key, char *arg)
 		opts->estimate_return = true;
 		break;
 
+	case 'p':
+		opts->pid = atoi(arg);
+		break;
+
 	case 'V':
 		pr_out("%s\n", uftrace_version);
 		return -1;
@@ -1054,6 +1060,8 @@ static void update_subcmd(struct opts *opts, char *cmd)
 		opts->mode = UFTRACE_MODE_SCRIPT;
 	else if (!strcmp(cmd, "tui"))
 		opts->mode = UFTRACE_MODE_TUI;
+	else if (!strcmp(cmd, "client"))
+		opts->mode = UFTRACE_MODE_CLIENT;
 	else
 		opts->mode = UFTRACE_MODE_INVALID;
 }
@@ -1341,6 +1349,7 @@ int main(int argc, char *argv[])
 		.patt_type      = PATT_REGEX,
 		.show_args      = true,
 		.clock		= "mono",
+		.daemon_kill    = false,
 	};
 	int ret = -1;
 	char *pager = NULL;
@@ -1422,7 +1431,8 @@ int main(int argc, char *argv[])
 
 	if (opts.mode == UFTRACE_MODE_RECORD ||
 	    opts.mode == UFTRACE_MODE_RECV ||
-	    opts.mode == UFTRACE_MODE_TUI)
+	    opts.mode == UFTRACE_MODE_TUI ||
+	    opts.mode == UFTRACE_MODE_CLIENT)
 		opts.use_pager = false;
 	if (opts.nop)
 		opts.use_pager = false;
@@ -1480,6 +1490,9 @@ int main(int argc, char *argv[])
 		break;
 	case UFTRACE_MODE_TUI:
 		ret = command_tui(argc, argv, &opts);
+		break;
+	case UFTRACE_MODE_CLIENT:
+		ret = command_client(argc, argv, &opts);
 		break;
 	case UFTRACE_MODE_INVALID:
 		ret = 1;
