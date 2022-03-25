@@ -693,6 +693,9 @@ static int do_dynamic_update(struct symtabs *symtabs, char *patch_funcs,
 		       stats.total, basename(symtabs->filename));
 	}
 
+	release_pattern_list(&patch_patterns);
+	release_pattern_list(&unpatch_patterns);
+
 	return 0;
 }
 
@@ -822,12 +825,13 @@ void mcount_dynamic_dlopen(struct symtabs *symtabs, struct dl_phdr_info *info,
 	free(mdi);
 
 	mcount_freeze_code();
+
+	release_pattern_list(&patch_patterns);
+	release_pattern_list(&unpatch_patterns);
 }
 
 void mcount_dynamic_finish(void)
 {
-	release_pattern_list(&patch_patterns);
-	release_pattern_list(&unpatch_patterns);
 	mcount_disasm_finish(&disasm);
 }
 
