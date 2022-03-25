@@ -358,7 +358,8 @@ struct mcount_dynamic_info *setup_trampoline(struct uftrace_mmap *map)
 	return mdi;
 }
 
-static LIST_HEAD(patterns);
+static LIST_HEAD(patch_patterns);
+static LIST_HEAD(unpatch_patterns);
 
 struct patt_list {
 	struct list_head list;
@@ -367,14 +368,14 @@ struct patt_list {
 	bool positive;
 };
 
-static bool match_pattern_module(char *pathname)
+static bool match_pattern_module(char *pathname, struct list_head *patterns)
 {
 	struct patt_list *pl;
 	bool ret = false;
 	char *libname = basename(pathname);
 	char *soname = get_soname(pathname);
 
-	list_for_each_entry(pl, &patterns, list) {
+	list_for_each_entry(pl, patterns, list) {
 		if (!strncmp(libname, pl->module, strlen(pl->module))) {
 			ret = true;
 			break;
@@ -390,13 +391,15 @@ static bool match_pattern_module(char *pathname)
 	return ret;
 }
 
-static bool match_pattern_list(struct uftrace_mmap *map, char *soname, char *sym_name)
+/* FIXME arguments order: patterns first */
+static bool match_pattern_list(struct uftrace_mmap *map, char *soname,
+			       char *sym_name, struct list_head *patterns)
 {
 	struct patt_list *pl;
 	bool ret = false;
 	char *libname = basename(map->libname);
 
-	list_for_each_entry(pl, &patterns, list) {
+	list_for_each_entry(pl, patterns, list) {
 		int len = strlen(pl->module);
 
 		if (strncmp(libname, pl->module, len) &&
@@ -410,27 +413,36 @@ static bool match_pattern_list(struct uftrace_mmap *map, char *soname, char *sym
 	return ret;
 }
 
-static void parse_pattern_list(char *patch_funcs, char *def_mod,
-			       enum uftrace_pattern_type ptype)
+static void parse_pattern_string(char *funcs, char *def_mod,
+			        enum uftrace_pattern_type ptype,
+				struct list_head *patterns,
+				bool *all_negative, bool invert)
 {
-	struct strv funcs = STRV_INIT;
+	struct strv funcs_v = STRV_INIT;
 	char *name;
 	int j;
 	struct patt_list *pl;
-	bool all_negative = true;
 
-	strv_split(&funcs, patch_funcs, ";");
+	strv_split(&funcs_v, funcs, ";");
 
-	strv_for_each(&funcs, name, j) {
+	strv_for_each(&funcs_v, name, j) {
 		char *delim;
 
 		pl = xzalloc(sizeof(*pl));
 
-		if (name[0] == '!')
-			name++;
+		if (name[0] == '!') {
+			if (invert) {
+				free(pl);
+				continue;
+			}
+			else {
+				name++;
+				pl->positive = false;
+			}
+		}
 		else {
-			pl->positive = true;
-			all_negative = false;
+			pl->positive = !invert;
+			*all_negative = false;
 		}
 
 		delim = strchr(name, '@');
@@ -443,11 +455,23 @@ static void parse_pattern_list(char *patch_funcs, char *def_mod,
 		}
 
 		init_filter_pattern(ptype, &pl->patt, name);
-		list_add_tail(&pl->list, &patterns);
+		list_add_tail(&pl->list, patterns); /* FIXME smart insertion */
 	}
+
+	strv_free(&funcs_v);
+}
+
+static void fill_pattern_list(struct list_head *patterns, char *funcs,
+			char *exceptions, char *def_mod,
+			enum uftrace_pattern_type ptype)
+{
+	bool all_negative = true;
+
+	parse_pattern_string(funcs, def_mod, ptype, patterns, &all_negative, false);
 
 	/* prepend match-all pattern, if all patterns are negative */
 	if (all_negative) {
+		struct patt_list *pl;
 		pl = xzalloc(sizeof(*pl));
 		pl->positive = true;
 		pl->module = xstrdup(def_mod);
@@ -457,17 +481,17 @@ static void parse_pattern_list(char *patch_funcs, char *def_mod,
 		else
 			init_filter_pattern(PATT_GLOB, &pl->patt, "*");
 
-		list_add(&pl->list, &patterns);
-	}
+		list_add(&pl->list, patterns);
 
-	strv_free(&funcs);
+		parse_pattern_string(exceptions, def_mod, ptype, patterns, &all_negative, true);
+	}
 }
 
-static void release_pattern_list(void)
+static void release_pattern_list(struct list_head *patterns)
 {
 	struct patt_list *pl, *tmp;
 
-	list_for_each_entry_safe(pl, tmp, &patterns, list) {
+	list_for_each_entry_safe(pl, tmp, patterns, list) {
 		list_del(&pl->list);
 		free_filter_pattern(&pl->patt);
 		free(pl->module);
@@ -476,7 +500,8 @@ static void release_pattern_list(void)
 }
 
 static bool skip_sym(struct sym *sym, struct mcount_dynamic_info *mdi,
-		     struct uftrace_mmap *map, char *soname)
+		     struct uftrace_mmap *map, char *soname,
+		     struct list_head *patterns)
 {
 	/* skip special startup (csu) functions */
 	const char *csu_skip_syms[] = {
@@ -495,12 +520,6 @@ static bool skip_sym(struct sym *sym, struct mcount_dynamic_info *mdi,
 	    sym->type != ST_GLOBAL_FUNC &&
 	    sym->type != ST_WEAK_FUNC)
 		return true;
-
-	if (!match_pattern_list(map, soname, sym->name)) {
-		if (mcount_unpatch_func(mdi, sym, &disasm) == 0)
-			stats.unpatch++;
-		return true;
-	}
 
 	return false;
 }
@@ -522,7 +541,22 @@ static void mcount_patch_func_with_stats(struct mcount_dynamic_info *mdi,
 	stats.total++;
 }
 
-static void patch_patchable_func_matched(struct mcount_dynamic_info *mdi,
+static void mcount_update_func(struct mcount_dynamic_info *mdi,
+			struct uftrace_mmap *map, struct sym *sym, char *soname,
+			bool *found)
+{
+	if (match_pattern_list(map, soname, sym->name, &patch_patterns)) {
+		if (found)
+			*found = true;
+		mcount_patch_func_with_stats(mdi, sym);
+	}
+	else if (match_pattern_list(map, soname, sym->name, &unpatch_patterns)) {
+		if (mcount_unpatch_func(mdi, sym, &disasm) == INSTRUMENT_SUCCESS)
+			stats.unpatch++;
+	}
+}
+
+static void update_patchable_func_matched(struct mcount_dynamic_info *mdi,
 					 struct uftrace_mmap *map)
 {
 	struct symtab *symtab;
@@ -553,17 +587,17 @@ static void patch_patchable_func_matched(struct mcount_dynamic_info *mdi,
 		}
 		else {
 			sym = searched_sym;
-			if (skip_sym(sym, mdi, map, soname))
+			if (skip_sym(sym, mdi, map, soname, &patch_patterns))
 				continue;
 		}
 
-		mcount_patch_func_with_stats(mdi, sym);
+		mcount_update_func(mdi, map, sym, soname, NULL);
 	}
 
 	free(soname);
 }
 
-static void patch_normal_func_matched(struct mcount_dynamic_info *mdi,
+static void update_normal_func_matched(struct mcount_dynamic_info *mdi,
 				      struct uftrace_mmap *map)
 {
 	struct symtab *symtab;
@@ -577,11 +611,10 @@ static void patch_normal_func_matched(struct mcount_dynamic_info *mdi,
 	for (i = 0; i < symtab->nr_sym; i++) {
 		sym = &symtab->sym[i];
 
-		if (skip_sym(sym, mdi, map, soname))
+		if (skip_sym(sym, mdi, map, soname, &patch_patterns))
 			continue;
 
-		found = true;
-		mcount_patch_func_with_stats(mdi, sym);
+		mcount_update_func(mdi, map, sym, soname, &found);
 	}
 
 	if (!found)
@@ -590,7 +623,7 @@ static void patch_normal_func_matched(struct mcount_dynamic_info *mdi,
 	free(soname);
 }
 
-static void patch_func_matched(struct mcount_dynamic_info *mdi,
+static void update_func_matched(struct mcount_dynamic_info *mdi,
 			       struct uftrace_mmap *map)
 {
 	/*
@@ -601,22 +634,27 @@ static void patch_func_matched(struct mcount_dynamic_info *mdi,
 	 * begins with NOP patterns for patchable function entry.
 	 */
 	if (mdi->type == DYNAMIC_PATCHABLE)
-		patch_patchable_func_matched(mdi, map);
+		update_patchable_func_matched(mdi, map);
 	else
-		patch_normal_func_matched(mdi, map);
+		update_normal_func_matched(mdi, map);
 }
 
 static int do_dynamic_update(struct symtabs *symtabs, char *patch_funcs,
-			     enum uftrace_pattern_type ptype)
+			char *unpatch_funcs, enum uftrace_pattern_type ptype)
 {
 	struct uftrace_mmap *map;
 	char *def_mod;
 
-	if (patch_funcs == NULL)
+	if (!patch_funcs && !unpatch_funcs)
 		return 0;
+	if (!patch_funcs)
+		patch_funcs = "";
+	if (!unpatch_funcs)
+		unpatch_funcs = "";
 
 	def_mod = basename(symtabs->exec_map->libname);
-	parse_pattern_list(patch_funcs, def_mod, ptype);
+	fill_pattern_list(&patch_patterns, patch_funcs, unpatch_funcs, def_mod, ptype);
+	fill_pattern_list(&unpatch_patterns, unpatch_funcs, patch_funcs, def_mod, ptype);
 
 	for_each_map(symtabs, map) {
 		struct mcount_dynamic_info *mdi;
@@ -626,7 +664,7 @@ static int do_dynamic_update(struct symtabs *symtabs, char *patch_funcs,
 		if (mdi == NULL)
 			continue;
 
-		patch_func_matched(mdi, map);
+		update_func_matched(mdi, map);
 	}
 
 	if (stats.failed + stats.skipped + stats.nomatch == 0) {
@@ -665,21 +703,27 @@ static int calc_percent(int n, int total, int *rem)
 }
 
 int mcount_dynamic_update(struct symtabs *symtabs, char *patch_funcs,
-			  enum uftrace_pattern_type ptype)
+			  char *unpatch_funcs, enum uftrace_pattern_type ptype)
 {
 	int ret = 0;
-	char *size_filter;
-	bool needs_modules = !!strchr(patch_funcs, '@');
+	char *size_filter = NULL;
+	bool needs_modules = (patch_funcs && !!strchr(patch_funcs, '@')) ||
+		(unpatch_funcs && !!strchr(unpatch_funcs, '@'));
 
 	mcount_disasm_init(&disasm);
 
 	prepare_dynamic_update(symtabs, needs_modules);
 
-	size_filter = getenv("UFTRACE_PATCH_SIZE");
+	if (patch_funcs) {	/* FIXME not pretty */
+		size_filter = getenv("UFTRACE_PATCH_SIZE");
+	}
+	else if (unpatch_funcs) {
+		size_filter = getenv("UFTRACE_UNPATCH_SIZE");
+	}
 	if (size_filter != NULL)
 		min_size = strtoul(size_filter, NULL, 0);
 
-	ret = do_dynamic_update(symtabs, patch_funcs, ptype);
+	ret = do_dynamic_update(symtabs, patch_funcs, unpatch_funcs, ptype);
 
 	if (stats.total && stats.failed) {
 		int success = stats.total - stats.failed - stats.skipped;
@@ -707,7 +751,7 @@ void mcount_dynamic_dlopen(struct symtabs *symtabs, struct dl_phdr_info *info,
 	struct mcount_dynamic_info *mdi;
 	struct uftrace_mmap *map;
 
-	if (!match_pattern_module(pathname))
+	if (!match_pattern_module(pathname, &patch_patterns))
 		return;
 
 	mdi = create_mdi(info);
@@ -734,7 +778,7 @@ void mcount_dynamic_dlopen(struct symtabs *symtabs, struct dl_phdr_info *info,
 		return;
 	}
 
-	patch_func_matched(mdi, map);
+	update_func_matched(mdi, map);
 
 	mcount_arch_dynamic_recover(mdi, &disasm);
 	mcount_cleanup_trampoline(mdi);
@@ -745,7 +789,8 @@ void mcount_dynamic_dlopen(struct symtabs *symtabs, struct dl_phdr_info *info,
 
 void mcount_dynamic_finish(void)
 {
-	release_pattern_list();
+	release_pattern_list(&patch_patterns);
+	release_pattern_list(&unpatch_patterns);
 	mcount_disasm_finish(&disasm);
 }
 
@@ -858,31 +903,40 @@ TEST_CASE(dynamic_pattern_list)
 	strcpy(other_map->libname, "other");
 
 	pr_dbg("check simple match with default module\n");
-	parse_pattern_list("abc;!def", "main", PATT_SIMPLE);
+	fill_pattern_list(&patch_patterns, "abc;!def", "", "main", PATT_SIMPLE);
 
-	TEST_EQ(match_pattern_list(main_map, NULL, "abc"), true);
-	TEST_EQ(match_pattern_list(main_map, NULL, "def"), false);
-	TEST_EQ(match_pattern_list(other_map, NULL, "xyz"), false);
+	TEST_EQ(match_pattern_list(main_map, NULL, "abc", &patch_patterns), true);
+	TEST_EQ(match_pattern_list(main_map, NULL, "def", &patch_patterns), false);
+	TEST_EQ(match_pattern_list(other_map, NULL, "xyz", &patch_patterns), false);
 
-	release_pattern_list();
+	release_pattern_list(&patch_patterns);
 
 	pr_dbg("check negative regex match with default module\n");
-	parse_pattern_list("!^a", "main", PATT_REGEX);
+	fill_pattern_list(&patch_patterns, "!^a", "", "main", PATT_REGEX);
 
-	TEST_EQ(match_pattern_list(main_map, NULL, "abc"), false);
-	TEST_EQ(match_pattern_list(main_map, NULL, "def"), true);
-	TEST_EQ(match_pattern_list(other_map, NULL, "xyz"), false);
+	TEST_EQ(match_pattern_list(main_map, NULL, "abc", &patch_patterns), false);
+	TEST_EQ(match_pattern_list(main_map, NULL, "def", &patch_patterns), true);
+	TEST_EQ(match_pattern_list(other_map, NULL, "xyz", &patch_patterns), false);
 
-	release_pattern_list();
+	release_pattern_list(&patch_patterns);
+
+	pr_dbg("check exclusion regex with default module\n");
+	fill_pattern_list(&patch_patterns, "!abc", "def", "main", PATT_SIMPLE);
+
+	TEST_EQ(match_pattern_list(main_map, NULL, "abc", &patch_patterns), false);
+	TEST_EQ(match_pattern_list(main_map, NULL, "def", &patch_patterns), false);
+	TEST_EQ(match_pattern_list(main_map, NULL, "xyz", &patch_patterns), true);
+
+	release_pattern_list(&patch_patterns);
 
 	pr_dbg("check wildcard match with other module\n");
-	parse_pattern_list("*@other", "main", PATT_GLOB);
+	fill_pattern_list(&patch_patterns, "*@other", "", "main", PATT_GLOB);
 
-	TEST_EQ(match_pattern_list(main_map, NULL, "abc"), false);
-	TEST_EQ(match_pattern_list(main_map, NULL, "def"), false);
-	TEST_EQ(match_pattern_list(other_map, NULL, "xyz"), true);
+	TEST_EQ(match_pattern_list(main_map, NULL, "abc", &patch_patterns), false);
+	TEST_EQ(match_pattern_list(main_map, NULL, "def", &patch_patterns), false);
+	TEST_EQ(match_pattern_list(other_map, NULL, "xyz", &patch_patterns), true);
 
-	release_pattern_list();
+	release_pattern_list(&patch_patterns);
 
 	free(main_map);
 	free(other_map);

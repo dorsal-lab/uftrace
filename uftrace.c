@@ -220,7 +220,7 @@ __used static const char uftrace_help[] =
 "      --time                 Print time information\n"
 "  -T, --trigger=FUNC@act[,act,...]\n"
 "                             Trigger action on those FUNCs\n"
-"  -U, --unpatch=FUNC         Don't apply dynamic patching for FUNCs\n"
+"  -U, --unpatch=FUNC         Apply dynamic unpatching for FUNCs\n"
 "  -v, --debug                Print debug messages\n"
 "      --verbose              Print verbose (debug) messages\n"
 "      --with-syms=DIR        Use symbol files in the DIR\n"
@@ -664,9 +664,11 @@ static int parse_option(struct opts *opts, int key, char *arg)
 
 	case 'P':
 		opts->patch = opt_add_string(opts->patch, arg);
+		opts->unpatch = opt_add_prefix_string(opts->unpatch, "!", arg);
 		break;
 
 	case 'U':
+		opts->unpatch = opt_add_string(opts->unpatch, arg);
 		opts->patch = opt_add_prefix_string(opts->patch, "!", arg);
 		break;
 
@@ -1231,6 +1233,7 @@ static void free_opts(struct opts *opts)
 	free(opts->tid);
 	free(opts->event);
 	free(opts->patch);
+	free(opts->unpatch);
 	free(opts->caller);
 	free(opts->watch);
 	free_parsed_cmdline(opts->run_cmd);

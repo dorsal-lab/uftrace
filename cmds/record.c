@@ -70,9 +70,10 @@ static bool can_use_fast_libmcount(struct opts *opts)
 		return false;
 	if (getenv("UFTRACE_FILTER")    || getenv("UFTRACE_TRIGGER") ||
 	    getenv("UFTRACE_ARGUMENT")  || getenv("UFTRACE_RETVAL") ||
-	    getenv("UFTRACE_PATCH")     || getenv("UFTRACE_SCRIPT") ||
+	    getenv("UFTRACE_PATCH")     || getenv("UFTRACE_UNPATCH") ||
 	    getenv("UFTRACE_AUTO_ARGS") || getenv("UFTRACE_WATCH") ||
-	    getenv("UFTRACE_CALLER")    || getenv("UFTRACE_SIGNAL"))
+	    getenv("UFTRACE_CALLER")    || getenv("UFTRACE_SIGNAL") ||
+	    getenv("UFTRACE_SCRIPT"))
 		return false;
 	return true;
 }
@@ -213,6 +214,20 @@ static void setup_child_environ(struct opts *opts, int argc, char *argv[])
 		if (patch_str) {
 			setenv("UFTRACE_PATCH", patch_str, 1);
 			free(patch_str);
+		}
+
+		if (opts->size_filter) {
+			snprintf(buf, sizeof(buf), "%d", opts->size_filter);
+			setenv("UFTRACE_PATCH_SIZE", buf, 1);
+		}
+	}
+
+	if (opts->unpatch) {
+		char *unpatch_str = uftrace_clear_kernel(opts->unpatch);
+
+		if (unpatch_str) {
+			setenv("UFTRACE_UNPATCH", unpatch_str, 1);
+			free(unpatch_str);
 		}
 
 		if (opts->size_filter) {

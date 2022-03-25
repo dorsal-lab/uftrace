@@ -216,6 +216,7 @@ struct opts {
 	char *diff;
 	char *fields;
 	char *patch;
+	char *unpatch;
 	char *event;
 	char *watch;
 	char **run_cmd;

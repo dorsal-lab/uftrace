@@ -1770,6 +1770,7 @@ static __used void mcount_startup(void)
 	char *demangle_str;
 	char *plthook_str;
 	char *patch_str;
+	char *unpatch_str;
 	char *event_str;
 	char *dirname;
 	char *pattern_str;
@@ -1800,6 +1801,7 @@ static __used void mcount_startup(void)
 	demangle_str = getenv("UFTRACE_DEMANGLE");
 	plthook_str = getenv("UFTRACE_PLTHOOK");
 	patch_str = getenv("UFTRACE_PATCH");
+	unpatch_str = getenv("UFTRACE_UNPATCH");
 	event_str = getenv("UFTRACE_EVENT");
 	script_str = getenv("UFTRACE_SCRIPT");
 	nest_libcall = !!getenv("UFTRACE_NEST_LIBCALL");
@@ -1884,7 +1886,7 @@ static __used void mcount_startup(void)
 	else
 		mcount_return_fn = (unsigned long)mcount_return;
 
-	mcount_filter_init(patt_type, !!patch_str);
+	mcount_filter_init(patt_type, !!patch_str || !!unpatch_str);
 	mcount_watch_init();
 
 	if (maxstack_str)
@@ -1893,8 +1895,8 @@ static __used void mcount_startup(void)
 	if (threshold_str)
 		mcount_threshold = strtoull(threshold_str, NULL, 0);
 
-	if (patch_str)
-		mcount_dynamic_update(&symtabs, patch_str, patt_type);
+	if (patch_str || unpatch_str)
+		mcount_dynamic_update(&symtabs, patch_str, unpatch_str, patt_type);
 
 	if (event_str)
 		mcount_setup_events(dirname, event_str, patt_type);
