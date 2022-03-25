@@ -2214,6 +2214,9 @@ static __used void mcount_startup(void)
 	if (threshold_str)
 		mcount_threshold = strtoull(threshold_str, NULL, 0);
 
+	if (getenv("UFTRACE_DYNAMIC_INSTR"))
+		mcount_dynamic_init(&symtabs, patch_str, unpatch_str);
+
 	if (patch_str || unpatch_str)
 		mcount_dynamic_update(&symtabs, patch_str, unpatch_str, patt_type);
 

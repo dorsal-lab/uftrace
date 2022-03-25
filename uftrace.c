@@ -109,6 +109,7 @@ enum options {
 	OPT_libmcount_path,
 	OPT_daemon,
 	OPT_daemon_kill,
+	OPT_dynamic_instr,
 };
 
 __used static const char uftrace_usage[] =
@@ -157,6 +158,7 @@ __used static const char uftrace_help[] =
 "                             (default: 'abs,compact,no-percent')\n"
 "      --disable              Start with tracing disabled\n"
 "  -D, --depth=DEPTH          Trace functions within DEPTH\n"
+"      --dynamic-instr        Setup libmcount for runtime dynamic tracing\n"
 "  -e, --estimate-return      Use only entry record type for safety\n"
 "      --event-full           Show all events outside of function\n"
 "  -E, --Event=EVENT          Enable EVENT to save more information\n"
@@ -341,6 +343,7 @@ static const struct option uftrace_options[] = {
 	NO_ARG(daemon, OPT_daemon),
 	REQ_ARG(pid, 'p'),
 	NO_ARG(daemon-kill, OPT_daemon_kill),
+	NO_ARG(dynamic-instr, OPT_dynamic_instr),
 	{ 0 }
 };
 
@@ -674,11 +677,13 @@ static int parse_option(struct opts *opts, int key, char *arg)
 	case 'P':
 		opts->patch = opt_add_string(opts->patch, arg);
 		opts->unpatch = opt_add_prefix_string(opts->unpatch, "!", arg);
+		opts->dynamic_instr = true;
 		break;
 
 	case 'U':
 		opts->unpatch = opt_add_string(opts->unpatch, arg);
 		opts->patch = opt_add_prefix_string(opts->patch, "!", arg);
+		opts->dynamic_instr = true;
 		break;
 
 	case 'Z':
@@ -1030,6 +1035,11 @@ static int parse_option(struct opts *opts, int key, char *arg)
 
 	case OPT_daemon_kill:
 		opts->daemon_kill = true;
+		break;
+
+	case OPT_dynamic_instr:
+		opts->dynamic_instr = true;
+		opts->force = true; /* implied */
 		break;
 
 	default:

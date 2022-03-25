@@ -286,6 +286,7 @@ struct opts {
 	bool estimate_return;
 	bool daemon;
 	bool daemon_kill;
+	bool dynamic_instr;
 	struct uftrace_time_range range;
 	enum uftrace_pattern_type patt_type;
 };

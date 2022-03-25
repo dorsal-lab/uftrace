@@ -70,6 +70,8 @@ struct mcount_disasm_engine {
  */
 #define MAX_COND_BRANCH 3
 
+int mcount_dynamic_init(struct symtabs *symtabs, char *patch_str,
+			char *unpatch_str);
 int mcount_dynamic_update(struct symtabs *symtabs, char *patch_funcs,
 			  char *unpatch_funcs, enum uftrace_pattern_type ptype);
 void mcount_dynamic_dlopen(struct symtabs *symtabs, struct dl_phdr_info *info,

@@ -351,6 +351,9 @@ static void setup_child_environ(struct opts *opts, int argc, char *argv[])
 	if (opts->daemon)
 		setenv("UFTRACE_DAEMON", "1", 1);
 
+	if (opts->dynamic_instr)
+		setenv("UFTRACE_DYNAMIC_INSTR", "1", 1);
+
 	if (argc > 0) {
 		char *args = NULL;
 		int i;
