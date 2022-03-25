@@ -16,6 +16,7 @@
 #include "utils/graph.h"
 #include "libtraceevent/kbuffer.h"
 #include "libtraceevent/event-parse.h"
+#include "utils/arg.h"
 
 
 /* target sampling frequency for flame graph */
@@ -868,8 +869,6 @@ static void dump_chrome_header(struct uftrace_dump_ops *ops,
 
 	chrome->last_comma = false;
 }
-
-void print_json_escaped_char(char **args, size_t *len, const char c);
 
 static void dump_chrome_task_rstack(struct uftrace_dump_ops *ops,
 				     struct uftrace_task_reader *task, char *name)
