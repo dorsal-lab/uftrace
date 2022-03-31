@@ -1,0 +1,3 @@
+[submodule "subprojects/libresolver"]
+	path = subprojects/libresolver
+	url = https://github.com/clementguidi/libresolver.git
