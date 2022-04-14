@@ -32,6 +32,7 @@ usage() {
   --without-libluajit   build without libluajit              (even if found on the system)
   --without-libncurses  build without libncursesw            (even if found on the system)
   --without-libunwind   build without libunwind              (even if found on the system)
+  --without-libpatch    build without libpatch               (even if found on the system)
   --without-capstone    build without libcapstone            (even if found on the system)
   --without-lttng       build without lttng                  (even if found on the system)
   --without-libresolver build without libresolver
@@ -193,6 +194,7 @@ for dep in $IGNORE; do
         libluajit*)  TARGET=have_libluajit     ;;
         libncurse*)  TARGET=have_libncurses    ;;
         libunwind)   TARGET=have_libunwind     ;;
+        libpatch)    TARGET=have_libpatch      ;;
         libstdc++)   TARGET=cxa_demangle       ;;
         capstone)    TARGET=have_libcapstone   ;;
         lttng)       TARGET=have_lttng         ;;
@@ -270,6 +272,7 @@ print_feature "libresolver" "have_libresolver" "indirect jump resolution support
 print_feature "libunwind" "have_libunwind" "libunwind support"
 print_feature "daemon" "daemonize" "mcount daemon support"
 print_feature "lttng" "have_lttng" "lttng-ust support"
+print_feature "libpatch" "have_libpatch" "libpatch support"
 
 cat >$output <<EOF
 # this file is generated automatically
