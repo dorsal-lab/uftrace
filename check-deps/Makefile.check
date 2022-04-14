@@ -80,3 +80,9 @@ endif
 ifneq ($(wildcard $(objdir)/check-deps/cc_has_minline_all_stringops),)
   LIB_CFLAGS += -minline-all-stringops
 endif
+
+ifneq ($(wildcard $(objdir)/check-deps/have_libpatch),)
+  LIB_CFLAGS  += -DHAVE_LIBPATCH
+  LIB_CFLAGS  += $(shell pkg-config --cflags libpatch 2> /dev/null)
+  LIB_LDFLAGS += $(shell pkg-config --libs libpatch 2> /dev/null)
+endif
