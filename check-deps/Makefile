@@ -14,6 +14,7 @@ CHECK_LIST += have_libdw
 CHECK_LIST += have_libunwind
 CHECK_LIST += have_libcapstone
 CHECK_LIST += have_lttng
+CHECK_LIST += have_libresolver
 CHECK_LIST += cc_has_minline_all_stringops
 CHECK_LIST += daemonize
 
@@ -54,6 +55,8 @@ CFLAGS_have_libunwind  = $(shell pkg-config --cflags libunwind 2> /dev/null)
 LDFLAGS_have_libunwind = $(shell pkg-config --libs   libunwind 2> /dev/null)
 LDFLAGS_have_lttng = -llttng-ust
 CFLAGS_cc_has_minline_all_stringops = -minline-all-stringops
+CFLAGS_have_libresolver  = -lstdc++ -I$(CHKDIR)/../subprojects/libresolver/include
+LDFLAGS_have_libresolver = -L$(CHKDIR)/../libresolver -lresolver
 
 check-build: $(CHECK_LIST)
 

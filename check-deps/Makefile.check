@@ -89,3 +89,9 @@ endif
 ifneq ($(wildcard $(objdir)/check-deps/daemonize),)
   LIB_CFLAGS += -DENABLE_MCOUNT_DAEMON
 endif
+
+ifneq ($(wildcard $(objdir)/check-deps/have_libresolver),)
+  LIB_CFLAGS += -I$(srcdir)/subprojects/libresolver/include
+  LIB_CFLAGS += -DHAVE_LIBRESOLVER
+  LIB_LDFLAGS += -L$(objdir)/libresolver -lresolver
+endif

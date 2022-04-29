@@ -10,7 +10,10 @@
 #ifdef HAVE_LIBCAPSTONE
 #include <capstone/capstone.h>
 #include <capstone/platform.h>
-#include <libresolver/porcelain.hpp>
+
+#ifdef HAVE_LIBRESOLVER
+# include <libresolver/porcelain.hpp>
+#endif
 
 struct disasm_check_data {
 	uintptr_t		addr;
@@ -21,6 +24,34 @@ struct disasm_check_data {
 };
 
 extern struct mcount_arch_patch_stats patch_stats;
+
+#ifdef HAVE_LIBRESOLVER
+static int check_indirect_jump_targets(csh handle,
+				uint64_t patch_addr, uint64_t jump_index,
+				cs_insn *insns, size_t insn_count)
+{
+	int status = 0;
+
+	uint64_t* results;
+	size_t result_count = libresolver_x86_resolve(handle, insns, insn_count, jump_index, &results, NULL);
+	if (results == NULL) {
+		status = -1;
+		goto out;
+	}
+
+	for (size_t i = 0; i < result_count; i++) {
+		if (results[i] == patch_addr) {
+			status = -1;
+			goto out_free;
+		}
+	}
+
+out_free:
+	free(results);
+out:
+	return status;
+}
+#endif
 
 void mcount_disasm_init(struct mcount_disasm_engine *disasm)
 {
@@ -500,32 +531,6 @@ static int check_instrumentable(struct mcount_disasm_engine *disasm,
 		}
 	}
 
-out:
-	return status;
-}
-
-static int check_indirect_jump_targets(csh handle,
-				uint64_t patch_addr, uint64_t jump_index,
-				cs_insn *insns, size_t insn_count)
-{
-	int status = 0;
-
-	uint64_t* results;
-	size_t result_count = libresolver_x86_resolve(handle, insns, insn_count, jump_index, &results, NULL);
-	if (results == NULL) {
-		status = -1;
-		goto out;
-	}
-
-	for (size_t i = 0; i < result_count; i++) {
-		if (results[i] == patch_addr) {
-			status = -1;
-			goto out_free;
-		}
-	}
-
-out_free:
-	free(results);
 out:
 	return status;
 }

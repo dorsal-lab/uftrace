@@ -431,4 +431,13 @@ int read_pmu_event(struct mcount_thread_data *mtdp, enum uftrace_event_id id,
 void release_pmu_event(struct mcount_thread_data *mtdp, enum uftrace_event_id id);
 void finish_pmu_event(struct mcount_thread_data *mtdp);
 
+#ifndef HAVE_LIBRESOLVER
+static inline int check_indirect_jump_targets(csh handle, uint64_t patch_addr,
+					uint64_t jump_index, cs_insn *insns,
+					size_t insn_count)
+{
+	return -1;
+}
+#endif
+
 #endif /* UFTRACE_MCOUNT_INTERNAL_H */
