@@ -32,6 +32,10 @@
 #include "utils/hashmap.h"
 #include "utils/membarrier.h"
 
+#ifdef HAVE_LIBPATCH
+#include <libpatch/patch.h>
+#endif // HAVE_LIBPATCH
+
 static struct mcount_dynamic_info *mdinfo;
 static struct mcount_dynamic_stats {
 	int total;
@@ -306,6 +310,23 @@ __weak void mcount_arch_print_patch_fail_statistics()
 __weak void mcount_arch_print_patch_skip_statistics()
 {
 }
+
+#ifdef HAVE_LIBPATCH
+void init_libpatch()
+{	if (patch_init(NULL, 0) != PATCH_OK) { /* TODO Setup panic hook  */
+		pr_err("libpatch initialization failed");
+	}
+}
+
+void fini_libpatch()
+{
+	if (patch_fini() != PATCH_OK)
+		pr_warn("libpatch fini failed\n");
+}
+#else
+void init_libpatch() {}
+void fini_libpatch() {}
+#endif // HAVE_LIBPATCH
 
 struct find_module_data {
 	struct symtabs *symtabs;
@@ -812,6 +833,8 @@ int mcount_dynamic_init(struct symtabs *symtabs, char *patch_str,
 	if (size_filter != NULL)
 		min_size = strtoul(size_filter, NULL, 0);
 
+	init_libpatch();
+
 	return 0;
 }
 
@@ -897,6 +920,7 @@ void mcount_dynamic_dlopen(struct symtabs *symtabs, struct dl_phdr_info *info,
 
 void mcount_dynamic_finish(void)
 {
+	fini_libpatch();
 	mcount_disasm_finish(&disasm);
 }
 

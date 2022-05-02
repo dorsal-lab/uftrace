@@ -36,6 +36,10 @@ extern void __dentry__(void);
 extern void __xray_entry(void);
 extern void __xray_exit(void);
 
+#ifdef HAVE_LIBPATCH
+#include <libpatch/patch.h>
+#endif // HAVE_LIBPATCH
+
 static const unsigned char fentry_nop_patt1[] = { 0x67, 0x0f, 0x1f, 0x04, 0x00 };
 static const unsigned char fentry_nop_patt2[] = { 0x0f, 0x1f, 0x44, 0x00, 0x00 };
 static const unsigned char patchable_gcc_nop[] = { 0x90, 0x90, 0x90, 0x90, 0x90 };
@@ -528,6 +532,48 @@ void mcount_arch_reset_patch_stats()
 	memset(&patch_stats, 0, sizeof(patch_stats));
 }
 
+#ifdef HAVE_LIBPATCH
+int setup_dynamic_trampoline(struct mcount_dynamic_info *mdi,
+			unsigned char *trampoline, size_t size)
+{
+	return 0;
+}
+
+int mprotect_trampoline(struct mcount_dynamic_info *mdi)
+{
+	return 0;
+}
+#else
+int mprotect_trampoline(struct mcount_dynamic_info *mdi)
+{
+	if (mprotect(PAGE_ADDR(mdi->text_addr),
+			PAGE_LEN(mdi->text_addr, mdi->text_size),
+			PROT_READ | PROT_WRITE | PROT_EXEC)) {
+		pr_dbg("cannot setup trampoline due to protection: %m\n");
+		return -1;
+	}
+	return 0;
+}
+#ifdef HAVE_LIBCAPSTONE
+int setup_dynamic_trampoline(struct mcount_dynamic_info *mdi,
+			unsigned char *trampoline, size_t size)
+{
+	unsigned long dentry_addr = (unsigned long)__dentry__;
+
+	/* jmpq  *0x2(%rip)     # <dentry_addr> */
+	memcpy((void *)mdi->trampoline, trampoline, size);
+	memcpy((void *)mdi->trampoline + size, &dentry_addr, sizeof(dentry_addr));
+	return 0;
+}
+#else
+inline int setup_dynamic_trampoline(struct mcount_dynamic_info *mdi,
+				unsigned char *trampoline, size_t size)
+{
+	return -1;
+}
+#endif // HAVE_LIBCAPSTONE
+#endif // HAVE_LIBPATCH
+
 int mcount_setup_trampoline(struct mcount_dynamic_info *mdi)
 {
 	unsigned char trampoline[] = { 0x3e, 0xff, 0x25, 0x01, 0x00, 0x00, 0x00, 0xcc };
@@ -560,12 +606,8 @@ int mcount_setup_trampoline(struct mcount_dynamic_info *mdi)
 			pr_err("failed to mmap trampoline for setup");
 	}
 
-	if (mprotect(PAGE_ADDR(mdi->text_addr),
-			 PAGE_LEN(mdi->text_addr, mdi->text_size),
-		     PROT_READ | PROT_WRITE | PROT_EXEC)) {
-		pr_dbg("cannot setup trampoline due to protection: %m\n");
+	if (mprotect_trampoline(mdi) < 0)
 		return -1;
-	}
 
 	if (mdi->type == DYNAMIC_XRAY) {
 		/* jmpq  *0x1(%rip)     # <xray_entry_addr> */
@@ -584,16 +626,9 @@ int mcount_setup_trampoline(struct mcount_dynamic_info *mdi)
 		memcpy((void *)mdi->trampoline + sizeof(trampoline),
 		       &fentry_addr, sizeof(fentry_addr));
 	}
-	else if (mdi->type == DYNAMIC_NONE) {
-#ifdef HAVE_LIBCAPSTONE
-		unsigned long dentry_addr = (unsigned long)__dentry__;
-
-		/* jmpq  *0x2(%rip)     # <dentry_addr> */
-		memcpy((void *)mdi->trampoline, trampoline, sizeof(trampoline));
-		memcpy((void *)mdi->trampoline + sizeof(trampoline),
-		       &dentry_addr, sizeof(dentry_addr));
-#endif
-	}
+	else if (mdi->type == DYNAMIC_NONE)
+		if (setup_dynamic_trampoline(mdi, trampoline, sizeof(trampoline)) < 0)
+			return -1;
 	return 0;
 }
 
