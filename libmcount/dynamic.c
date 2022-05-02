@@ -31,6 +31,10 @@
 #include "utils/list.h"
 #include "utils/hashmap.h"
 
+#ifdef HAVE_LIBPATCH
+#include <libpatch/patch.h>
+#endif // HAVE_LIBPATCH
+
 static struct mcount_dynamic_info *mdinfo;
 static struct mcount_dynamic_stats {
 	int total;
@@ -260,6 +264,57 @@ __weak void mcount_arch_patch_branch(struct mcount_disasm_info *info,
 				     struct mcount_orig_insn *orig)
 {
 }
+
+#ifdef HAVE_LIBPATCH
+void init_libpatch()
+{
+	patch_err err = patch_init(NULL, 0); /* TODO Setup panic hook  */
+
+	if (err != PATCH_OK) {
+		pr_dbg("[%d] %s", err, patch_error_string());
+		pr_err("libpatch initialization failed");
+	}
+	pr_dbg("initializing libpatch library\n");
+}
+
+void fini_libpatch()
+{
+	patch_err err = patch_fini();
+	char *reason;
+
+	if (err != PATCH_OK) {
+		switch (err) {
+		case PATCH_EINIT:
+			reason = "not initialized";
+			break;
+		case PATCH_EFINI:
+			reason = "internal failure";
+			break;
+		default:
+			reason = "unknown reason";
+		}
+		pr_warn("libpatch finalization failed: %s\n", reason);
+	}
+}
+
+void commit_dynamic_update(void)
+{
+	patch_result *results;
+	size_t results_count;
+
+	if (patch_commit(&results, &results_count) != PATCH_OK) {
+		for (int i = 0; i < (int) results_count; i++) {
+			pr_dbg3("%s\n", results[i].details);
+		}
+	}
+
+	patch_drop_results(results);
+}
+#else  // HAVE_LIBPATCH
+void commit_dynamic_update(void) {}
+void init_libpatch(void) {}
+void fini_libpatch(void) {}
+#endif // HAVE_LIBPATCH
 
 struct find_module_data {
 	struct symtabs *symtabs;
@@ -629,6 +684,8 @@ static int do_dynamic_update(struct symtabs *symtabs, char *patch_funcs,
 		patch_func_matched(mdi, map);
 	}
 
+	commit_dynamic_update();
+
 	if (stats.failed + stats.skipped + stats.nomatch == 0) {
 		pr_dbg("patched all (%d) functions in '%s'\n",
 		       stats.total, basename(symtabs->filename));
@@ -672,6 +729,7 @@ int mcount_dynamic_update(struct symtabs *symtabs, char *patch_funcs,
 	bool needs_modules = !!strchr(patch_funcs, '@');
 
 	mcount_disasm_init(&disasm);
+	init_libpatch();
 
 	prepare_dynamic_update(symtabs, needs_modules);
 
@@ -746,6 +804,7 @@ void mcount_dynamic_dlopen(struct symtabs *symtabs, struct dl_phdr_info *info,
 void mcount_dynamic_finish(void)
 {
 	release_pattern_list();
+	fini_libpatch();
 	mcount_disasm_finish(&disasm);
 }
 
