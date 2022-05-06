@@ -2146,6 +2146,31 @@ void xray_exit(long *retval)
 	errno = saved_errno;
 }
 
+#ifdef HAVE_LIBPATCH
+void libpatch_entry(struct patch_probe_context *ctx)
+{
+	struct mcount_regs regs;
+	unsigned long *parent;
+	unsigned long child;
+	int saved_errno = errno;
+
+	parent = (unsigned long *) ctx->sp;
+	child  = ctx->pc;
+	/* FIXME cast if needed uint64_t -> unsigned long */
+	regs.rdi = ctx->gregs[PATCH_X86_64_RDI];
+	regs.rsi = ctx->gregs[PATCH_X86_64_RSI];
+	regs.rdx = ctx->gregs[PATCH_X86_64_RDX];
+	regs.rcx = ctx->gregs[PATCH_X86_64_RCX];
+	regs.r8  = ctx->gregs[PATCH_X86_64_R8];
+	regs.r9  = ctx->gregs[PATCH_X86_64_R9];
+
+
+	__mcount_entry(parent, child, &regs);
+	pr_dbg("libpatch entry\n");
+	errno = saved_errno;
+}
+#endif
+
 static void atfork_prepare_handler(void)
 {
 	struct uftrace_msg_task tmsg = {

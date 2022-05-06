@@ -38,6 +38,8 @@
  *
  */
 
+#ifndef HAVE_LIBPATCH           // FIXME better remove the file from source when using libpatch
+
 #include "utils/asm.h"
 
 GLOBAL(__dentry__)
@@ -184,3 +186,5 @@ ENTRY(dynamic_return)
 	retq
 	.cfi_endproc
 END(dynamic_return)
+
+#endif // HAVE_LIBPATCH

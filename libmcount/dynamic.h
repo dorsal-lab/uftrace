@@ -2,6 +2,9 @@
 #define UFTRACE_MCOUNT_DYNAMIC_H
 
 #include <link.h>
+#ifdef HAVE_LIBPATCH
+#include <libpatch/patch.h>
+#endif // HAVE_LIBPATCH
 
 #include "utils/symbol.h"
 
@@ -17,6 +20,9 @@ extern void __fentry__(void);
 extern void __dentry__(void);
 extern void __xray_entry(void);
 extern void __xray_exit(void);
+#ifdef HAVE_LIBPATCH
+void libpatch_entry(struct patch_probe_context *ctx);
+#endif // HAVE_LIBPATCH
 
 struct xray_instr_map {
 	uint64_t address;

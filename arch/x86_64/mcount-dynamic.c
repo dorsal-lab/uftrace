@@ -50,6 +50,52 @@ typedef struct saved_instructions {
 	uint8_t insns[];
 } saved_instructions_t;
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 16, 0)
+static int sync_sigrt = -1;
+
+static void sync_sigrt_handler(int sig, siginfo_t *info, void *ucontext)
+{
+	unsigned int _;
+	__cpuid(_, _, _, _, _);
+}
+
+void setup_serialization_mechanism()
+{
+	sync_sigrt = find_unused_sigrt();
+	configure_sigrt_handler(sync_sigrt, sync_sigrt_handler);
+}
+
+static void serialize_instruction_cache()
+{
+	send_sigrt_to_all_threads(sync_sigrt);
+}
+
+#else  /* LINUX_VERSION_CODE < KERNEL_VERSION(4, 16, 0) */
+void setup_serialization_mechanism()
+{
+	if (membarrier(MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED_SYNC_CORE, 0, 0) < 0)
+		pr_err("failed to register intent to use MEMBARRIER_CMD_PRIVATE_EXPEDITED_SYNC_CORE\n");
+}
+
+static void serialize_instruction_cache()
+{
+	if (membarrier(MEMBARRIER_CMD_PRIVATE_EXPEDITED_SYNC_CORE, 0, 0) < 0)
+		pr_err("failed to execute serializing instruction\n");
+}
+#endif	/* LINUX_VERSION_CODE < KERNEL_VERSION(4, 16, 0) */
+
+#ifdef HAVE_LIBPATCH
+int setup_dynamic_trampoline(struct mcount_dynamic_info *mdi,
+			unsigned char *trampoline, size_t size)
+{
+	return 0;
+}
+
+int mprotect_trampoline(struct mcount_dynamic_info *mdi)
+{
+	return 0;
+}
+#else
 /*
  * This hashmap contains a mapping between function start addresses and the
  * relevant saved instructions. It is used when restoring the original
@@ -398,39 +444,6 @@ static int configure_sigrt_handler(int sigrt, void (handler)(int, siginfo_t *, v
 	return 0;
 }
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 16, 0)
-static int sync_sigrt = -1;
-
-static void sync_sigrt_handler(int sig, siginfo_t *info, void *ucontext)
-{
-	unsigned int _;
-	__cpuid(_, _, _, _, _);
-}
-
-void setup_serialization_mechanism()
-{
-	sync_sigrt = find_unused_sigrt();
-	configure_sigrt_handler(sync_sigrt, sync_sigrt_handler);
-}
-
-static void serialize_instruction_cache()
-{
-	send_sigrt_to_all_threads(sync_sigrt);
-}
-
-#else  /* LINUX_VERSION_CODE < KERNEL_VERSION(4, 16, 0) */
-void setup_serialization_mechanism()
-{
-	if (membarrier(MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED_SYNC_CORE, 0, 0) < 0)
-		pr_err("failed to register intent to use MEMBARRIER_CMD_PRIVATE_EXPEDITED_SYNC_CORE\n");
-}
-
-static void serialize_instruction_cache()
-{
-	if (membarrier(MEMBARRIER_CMD_PRIVATE_EXPEDITED_SYNC_CORE, 0, 0) < 0)
-		pr_err("failed to execute serializing instruction\n");
-}
-#endif	/* LINUX_VERSION_CODE < KERNEL_VERSION(4, 16, 0) */
 /*
  * These two lists are used to store functions that need to be optimized or cleaned
  * up later in the code. In both case, a SIGRTMIN+n must be send. By optimizing or
@@ -532,18 +545,6 @@ void mcount_arch_reset_patch_stats()
 	memset(&patch_stats, 0, sizeof(patch_stats));
 }
 
-#ifdef HAVE_LIBPATCH
-int setup_dynamic_trampoline(struct mcount_dynamic_info *mdi,
-			unsigned char *trampoline, size_t size)
-{
-	return 0;
-}
-
-int mprotect_trampoline(struct mcount_dynamic_info *mdi)
-{
-	return 0;
-}
-#else
 int mprotect_trampoline(struct mcount_dynamic_info *mdi)
 {
 	if (mprotect(PAGE_ADDR(mdi->text_addr),
@@ -1029,6 +1030,36 @@ static int patch_xray_func(struct mcount_dynamic_info *mdi, struct sym *sym, boo
 	return ret;
 }
 
+#ifdef HAVE_LIBPATCH
+static int patch_normal_func(struct mcount_dynamic_info *mdi, struct sym *sym,
+			     struct mcount_disasm_engine *disasm)
+{
+	patch_result *results;
+	size_t results_count;
+	patch_op op = {
+		.type          = PATCH_OP_INSTALL,
+		.addr.func_sym = sym->name,
+		.probe         = libpatch_entry
+	};
+	if (patch_queue(PATCH_FENTRY, &op) != PATCH_OK)
+		return INSTRUMENT_FAILED;
+
+	patch_commit(&results, &results_count);
+
+	if (results_count > 0) {
+		return INSTRUMENT_FAILED;
+	}
+
+	patch_drop_results(results); /* TODO check error code */
+
+	return INSTRUMENT_SUCCESS;
+}
+
+static int unpatch_normal_func(struct mcount_dynamic_info *mdi, struct sym *sym)
+{
+	return INSTRUMENT_FAILED;
+}
+#else
 static void patch_code(struct mcount_dynamic_info *mdi,
 		       struct mcount_disasm_info *info)
 {
@@ -1348,6 +1379,55 @@ static int unpatch_normal_func_finish(struct mcount_dynamic_info *mdi, struct sy
 	return 0;
 }
 
+int mcount_patched_funcs_finish(void) {
+	struct list_head *element = NULL;
+	struct list_head *tmp = NULL;
+	patched_func_info_t *func_info = NULL ;
+
+	send_sigrt_to_all_threads(move_sigrt);
+
+	list_for_each_safe (element, tmp, &patched_funcs_to_finish) {
+		func_info = list_entry(element, patched_func_info_t , list);
+
+		switch (func_info->mdi->type) {
+		case DYNAMIC_NONE:
+			patch_normal_func_finish(func_info->mdi, &func_info->info);
+			break;
+		default:
+			break;
+		}
+
+		list_del(element);
+	}
+
+	return 0;
+}
+
+int mcount_unpatched_funcs_finish(void) {
+	struct list_head *element = NULL;
+	struct list_head *tmp = NULL;
+	unpatched_func_info_t *func_info = NULL ;
+
+	send_sigrt_to_all_threads(move_sigrt);
+
+	list_for_each_safe (element, tmp, &unpatched_funcs_to_finish) {
+		func_info = list_entry(element, unpatched_func_info_t , list);
+
+		switch (func_info->mdi->type) {
+		case DYNAMIC_NONE:
+			unpatch_normal_func_finish(func_info->mdi, func_info->sym);
+			break;
+		default:
+			break;
+		}
+
+		list_del(element);
+	}
+
+	return 0;
+}
+#endif // HAVE_LIBPATCH
+
 static int unpatch_func(uint8_t *insn, char *name)
 {
 	uint8_t nop5[] = { 0x0f, 0x1f, 0x44, 0x00, 0x00 };
@@ -1447,30 +1527,6 @@ int mcount_patch_func(struct mcount_dynamic_info *mdi, struct sym *sym,
 	return result;
 }
 
-int mcount_patched_funcs_finish(void) {
-	struct list_head *element = NULL;
-	struct list_head *tmp = NULL;
-	patched_func_info_t *func_info = NULL ;
-
-	send_sigrt_to_all_threads(move_sigrt);
-
-	list_for_each_safe (element, tmp, &patched_funcs_to_finish) {
-		func_info = list_entry(element, patched_func_info_t , list);
-
-		switch (func_info->mdi->type) {
-		case DYNAMIC_NONE:
-			patch_normal_func_finish(func_info->mdi, &func_info->info);
-			break;
-		default:
-			break;
-		}
-
-		list_del(element);
-	}
-
-	return 0;
-}
-
 int mcount_unpatch_func(struct mcount_dynamic_info *mdi, struct sym *sym,
 			struct mcount_disasm_engine *disasm)
 {
@@ -1501,30 +1557,6 @@ int mcount_unpatch_func(struct mcount_dynamic_info *mdi, struct sym *sym,
 		break;
 	}
 	return result;
-}
-
-int mcount_unpatched_funcs_finish(void) {
-	struct list_head *element = NULL;
-	struct list_head *tmp = NULL;
-	unpatched_func_info_t *func_info = NULL ;
-
-	send_sigrt_to_all_threads(move_sigrt);
-
-	list_for_each_safe (element, tmp, &unpatched_funcs_to_finish) {
-		func_info = list_entry(element, unpatched_func_info_t , list);
-
-		switch (func_info->mdi->type) {
-		case DYNAMIC_NONE:
-			unpatch_normal_func_finish(func_info->mdi, func_info->sym);
-			break;
-		default:
-			break;
-		}
-
-		list_del(element);
-	}
-
-	return 0;
 }
 
 static void revert_normal_func(struct mcount_dynamic_info *mdi, struct sym *sym,
