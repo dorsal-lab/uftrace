@@ -111,6 +111,7 @@ enum options {
 	OPT_daemon,
 	OPT_daemon_kill,
 	OPT_dynamic_instr,
+	OPT_dry_run,
 };
 
 __used static const char uftrace_usage[] =
@@ -139,6 +140,7 @@ __used static const char uftrace_help[] =
 "  -a, --auto-args            Show arguments and return value of known functions\n"
 "  -A, --argument=FUNC@arg[,arg,...]\n"
 "                             Show function arguments\n"
+"      --dry-run              Benchmark instrumentation and exit\n"
 "  -b, --buffer=SIZE          Size of tracing buffer (default: "
 	stringify(SHMEM_BUFFER_SIZE_KB) "K)\n"
 "      --chrome               Dump recorded data in chrome trace format\n"
@@ -347,6 +349,7 @@ static const struct option uftrace_options[] = {
 	NO_ARG(daemon-kill, OPT_daemon_kill),
 	NO_ARG(lttng, OPT_lttng),
 	NO_ARG(dynamic-instr, OPT_dynamic_instr),
+	NO_ARG(dry-run, OPT_dry_run),
 	{ 0 }
 };
 
@@ -1047,6 +1050,11 @@ static int parse_option(struct opts *opts, int key, char *arg)
 	case OPT_dynamic_instr:
 		opts->dynamic_instr = true;
 		opts->force = true; /* implied */
+		break;
+
+	case OPT_dry_run:
+		opts->dry_run = true;
+		parse_debug_domain("dynamic:4");
 		break;
 
 	default:

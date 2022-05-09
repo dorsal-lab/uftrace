@@ -2487,6 +2487,10 @@ static void __attribute__((constructor))
 mcount_init(void)
 {
 	mcount_startup();
+
+	if (getenv("UFTRACE_DRY_RUN")) {
+		exit(0);
+	}
 }
 
 static void __attribute__((destructor))
