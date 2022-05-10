@@ -107,6 +107,7 @@ enum options {
 	OPT_clock,
 	OPT_usage,
 	OPT_libmcount_path,
+	OPT_daemon,
 	OPT_daemon_kill,
 };
 
@@ -144,6 +145,7 @@ __used static const char uftrace_help[] =
 	stringify(OPT_COLUMN_OFFSET) ")\n"
 "      --column-view          Print tasks in separate columns\n"
 "  -C, --caller-filter=FUNC   Only trace callers of those FUNCs\n"
+"      --daemon               Start a daemon in target\n"
 "      --daemon-kill          Kill a running daemon instance\n"
 "  -d, --data=DATA            Use this DATA instead of uftrace.data\n"
 "      --debug-domain=DOMAIN  Filter debugging domain\n"
@@ -334,6 +336,7 @@ static const struct option uftrace_options[] = {
 	NO_ARG(version, 'V'),
 	NO_ARG(estimate-return, 'e'),
 	REQ_ARG(with-syms, OPT_with_syms),
+	NO_ARG(daemon, OPT_daemon),
 	REQ_ARG(pid, 'p'),
 	NO_ARG(daemon-kill, OPT_daemon_kill),
 	{ 0 }
@@ -1013,6 +1016,10 @@ static int parse_option(struct opts *opts, int key, char *arg)
 			arg = "mono";
 		}
 		opts->clock = arg;
+		break;
+
+	case OPT_daemon:
+		opts->daemon = true;
 		break;
 
 	case OPT_daemon_kill:

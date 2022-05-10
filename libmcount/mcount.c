@@ -94,8 +94,11 @@ unsigned long mcount_return_fn;
 /* do not hook return address and inject EXIT record between functions */
 bool mcount_estimate_return;
 
+#ifdef ENABLE_MCOUNT_DAEMON
 /* daemon thread */
 pthread_t daemon_thread;
+#endif // ENABLE_MCOUNT_DAEMON
+
 __weak void dynamic_return(void) { }
 
 #ifdef DISABLE_MCOUNT_FILTER
@@ -750,6 +753,7 @@ out:
 	raise(sig);
 }
 
+#ifdef ENABLE_MCOUNT_DAEMON
 /* Daemon thread, waiting for instructions from the client. */
 void *command_daemon(void *arg)
 {
@@ -853,6 +857,53 @@ mcount_daemon_fail_all:
 		return 0;
 	}
 }
+
+void mcount_start_daemon()
+{
+	errno = pthread_create(&daemon_thread, NULL, &command_daemon, NULL);
+	if (errno != 0)
+		pr_warn("cannot start daemon: %s\n", strerror((errno)));
+}
+
+/* Check if the daemon is up, and send it a KILL message if so. Then join the
+ * thread daemon, so the target program can exit. */
+void mcount_kill_daemon()
+{
+	int daemon_sfd;
+	pid_t pid;
+	char *channel = NULL;
+	struct sockaddr_un addr;
+	enum uftrace_dopt opt = UFTRACE_DOPT_KILL;
+
+	if (daemon_thread == 0)
+		return;
+
+	daemon_sfd = socket(AF_UNIX, SOCK_STREAM, 0);
+	if (daemon_sfd == -1)
+		pr_err("error opening socket");
+	memset(&addr, 0, sizeof(struct sockaddr_un));
+	addr.sun_family = AF_UNIX;
+	pid = getpid();
+	xasprintf(&channel, "%s/%d.socket", MCOUNT_DAEMON_SOCKET_DIR, pid);
+	strncpy(addr.sun_path, channel,
+			sizeof(addr.sun_path) - 1);
+	if (connect(daemon_sfd, (struct sockaddr *) &addr,
+				sizeof(struct sockaddr_un)) == -1) {
+		if (errno != ENOENT) /* The daemon may have ended and deleted the socket */
+			pr_err("error connecting to daemon socket");
+	}
+	else if (write(daemon_sfd, &opt, sizeof(enum uftrace_dopt)) == -1) {
+		pr_err("error sending option type");
+	}
+	if (pthread_join(daemon_thread, NULL) == -1)
+		pr_warn("cannnot join daemon thread\n");
+	free(channel);
+}
+#else
+void mcount_start_daemon() {}
+void mcount_kill_daemon() {}
+#endif // ENABLE_MCOUNT_DAEMON
+
 static void mcount_init_file(void)
 {
 	struct sigaction sa = {
@@ -2022,9 +2073,9 @@ static __used void mcount_startup(void)
 	if (clock_str)
 		setup_clock_id(clock_str);
 
-	errno = pthread_create(&daemon_thread, NULL, &command_daemon, NULL);
-	if (errno != 0)
-		pr_err("cannot start daemon: %s", strerror((errno)));
+	if (getenv("UFTRACE_DAEMON"))
+		mcount_start_daemon();
+
 	pthread_atfork(atfork_prepare_handler, NULL, atfork_child_handler);
 
 	mcount_hook_functions();
@@ -2040,43 +2091,9 @@ static __used void mcount_startup(void)
 	mtd.recursion_marker = false;
 }
 
-/* Check if the daemon is up, and send it a KILL message if so. Then join the
- * thread daemon, so the target program can exit. */
-void kill_daemon_if_needed()
-{
-	int daemon_sfd;
-	pid_t pid;
-	char *channel = NULL;
-	struct sockaddr_un addr;
-	enum uftrace_dopt opt = UFTRACE_DOPT_KILL;
-
-	if (daemon_thread == 0)
-		return;
-
-	daemon_sfd = socket(AF_UNIX, SOCK_STREAM, 0);
-	if (daemon_sfd == -1)
-		pr_err("error opening socket");
-	memset(&addr, 0, sizeof(struct sockaddr_un));
-	addr.sun_family = AF_UNIX;
-	pid = getpid();
-	xasprintf(&channel, "%s/%d.socket", MCOUNT_DAEMON_SOCKET_DIR, pid);
-	strncpy(addr.sun_path, channel,
-			sizeof(addr.sun_path) - 1);
-	if (connect(daemon_sfd, (struct sockaddr *) &addr,
-				sizeof(struct sockaddr_un)) == -1) {
-		if (errno != ENOENT) /* The daemon may have ended and deleted the socket */
-			pr_err("error connecting to daemon socket");
-	}
-	else if (write(daemon_sfd, &opt, sizeof(enum uftrace_dopt)) == -1) {
-		pr_err("error sending option type");
-	}
-	if (pthread_join(daemon_thread, NULL) == -1)
-		pr_warn("cannnot join daemon thread\n");
-	free(channel);
-}
 static void mcount_cleanup(void)
 {
-	kill_daemon_if_needed();
+	mcount_kill_daemon();
 	mcount_finish();
 	destroy_dynsym_indexes();
 	mcount_dynamic_finish();

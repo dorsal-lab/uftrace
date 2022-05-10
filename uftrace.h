@@ -282,6 +282,7 @@ struct opts {
 	bool graphviz;
 	bool srcline;
 	bool estimate_return;
+	bool daemon;
 	bool daemon_kill;
 	struct uftrace_time_range range;
 	enum uftrace_pattern_type patt_type;
