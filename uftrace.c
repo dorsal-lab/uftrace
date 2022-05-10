@@ -89,6 +89,7 @@ enum options {
 	OPT_kernel_full,
 	OPT_kernel_only,
 	OPT_list_event,
+	OPT_lttng,
 	OPT_run_cmd,
 	OPT_opt_file,
 	OPT_keep_pid,
@@ -181,6 +182,7 @@ __used static const char uftrace_help[] =
 "      --libmcount-single     Use single thread version of libmcount\n"
 "      --list-event           List available events\n"
 "      --logfile=FILE         Save log messages to this file\n"
+"      --lttng                Output events to LTTng-ust\n"
 "  -l, --nest-libcall         Show nested library calls\n"
 "      --libname              Show libname name with symbol name\n"
 "      --libmcount-path=PATH  Load libmcount libraries from this PATH\n"
@@ -343,6 +345,7 @@ static const struct option uftrace_options[] = {
 	NO_ARG(daemon, OPT_daemon),
 	REQ_ARG(pid, 'p'),
 	NO_ARG(daemon-kill, OPT_daemon_kill),
+	NO_ARG(lttng, OPT_lttng),
 	NO_ARG(dynamic-instr, OPT_dynamic_instr),
 	{ 0 }
 };
@@ -909,6 +912,10 @@ static int parse_option(struct opts *opts, int key, char *arg)
 
 	case OPT_no_comment:
 		opts->comment = false;
+		break;
+
+	case OPT_lttng:
+		opts->lttng = true;
 		break;
 
 	case OPT_libmcount_single:

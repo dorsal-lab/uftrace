@@ -272,6 +272,7 @@ struct opts {
 	bool kernel_only;
 	bool keep_pid;
 	bool list_event;
+	bool lttng;
 	bool event_skip_out;
 	bool no_event;
 	bool no_sched;
