@@ -31,6 +31,13 @@
 #include "utils/symbol.h"
 #include "utils/filter.h"
 #include "utils/script.h"
+#include "utils/fstack.h"
+#include "utils/arg.h"
+
+#ifdef HAVE_LTTNG_UST
+#define TRACEPOINT_DEFINE
+#include "libmcount/lttng-events.h"
+#endif /* HAVE_LTTNG_UST */
 
 /* time filter in nsec */
 uint64_t mcount_threshold;
@@ -1326,6 +1333,26 @@ skip:
 	symbol_putname(sym, symname);
 }
 
+#if HAVE_LTTNG_UST
+void entry_record_trace_data(struct mcount_thread_data *mtdp,
+			struct mcount_ret_stack *rstack)
+{
+	char args[1024] = "";
+	struct uftrace_mmap *map;
+	if (rstack->flags & TRIGGER_FL_ARGUMENT) {
+		void *argbuf = get_argbuf(mtdp, rstack);
+		void *data = argbuf + sizeof(uint32_t);
+		map = find_map(&symtabs, rstack->child_ip);
+		format_argspec_string(args, &symtabs, map, data,
+				rstack->pargs, 1024, HAS_MORE | NEEDS_COMPACT);
+	}
+	tracepoint(lttng_ust_cyg_profile,
+		func_entry,
+		(void *) rstack->child_ip,
+		(void *) rstack->parent_ip,
+		args);
+}
+#else
 void entry_record_trace_data(struct mcount_thread_data *mtdp,
 			struct mcount_ret_stack *rstack)
 {
@@ -1345,6 +1372,7 @@ void entry_record_trace_data(struct mcount_thread_data *mtdp,
 			record_trace_data(mtdp, rstack, NULL);
 	}
 }
+#endif // HAVE_LTTNG_UST
 
 /* save current filter state to rstack */
 void mcount_entry_filter_record(struct mcount_thread_data *mtdp,
@@ -1446,6 +1474,28 @@ void mcount_entry_filter_record(struct mcount_thread_data *mtdp,
 
 }
 
+#ifdef HAVE_LTTNG_UST
+void exit_record_trace_data(struct mcount_thread_data *mtdp,
+			struct mcount_ret_stack *rstack,
+			long *retval, uint64_t time_filter)
+{
+	char ret[1024] = "";
+	struct uftrace_mmap *map;
+	if (retval) {
+		void *argbuf = get_argbuf(mtdp, rstack);
+		void *data = argbuf + sizeof(uint32_t);
+		map = find_map(&symtabs, rstack->child_ip);
+		format_argspec_string(ret, &symtabs, map, data,
+				rstack->pargs, 1024,
+				IS_RETVAL | HAS_MORE | NEEDS_COMPACT);
+	}
+	tracepoint(lttng_ust_cyg_profile,
+		func_exit,
+		(void *) rstack->child_ip,
+		(void *) rstack->parent_ip,
+		ret);
+}
+#else
 void exit_record_trace_data(struct mcount_thread_data *mtdp,
 			struct mcount_ret_stack *rstack,
 			long *retval, uint64_t time_filter)
@@ -1478,6 +1528,7 @@ void exit_record_trace_data(struct mcount_thread_data *mtdp,
 			mtdp->nr_events = k;  /* invalidate sync events */
 	}
 }
+#endif // HAVE_LTTNG_UST
 
 /* restore filter state from rstack */
 void mcount_exit_filter_record(struct mcount_thread_data *mtdp,
