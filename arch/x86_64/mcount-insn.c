@@ -601,6 +601,7 @@ static bool check_unsupported(struct mcount_disasm_engine *disasm,
 		case X86_OP_MEM:
 		case X86_OP_REG:
 			if (check_indirect_jump_targets(disasm->engine, info->addr, index, all_insn, all_insn_count) < 0) {
+				patch_stats.fail_funjmp++;
 				return false;
 			}
 			break;
