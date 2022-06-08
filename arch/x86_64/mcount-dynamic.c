@@ -476,6 +476,36 @@ static int patch_xray_func(struct mcount_dynamic_info *mdi, struct sym *sym)
  *
  */
 
+#ifdef HAVE_LIBPATCH
+static int patch_normal_func(struct mcount_dynamic_info *mdi, struct sym *sym,
+			     struct mcount_disasm_engine *disasm)
+{
+	patch_op op = {
+		.type          = PATCH_OP_INSTALL,
+		.addr.func_sym = sym->name,
+		.probe         = libpatch_entry
+	};
+
+	pr_dbg2("queue %s (0x%lx)\n", sym->name, sym->addr);
+
+	if (patch_queue(PATCH_FENTRY, &op) != PATCH_OK)
+		return INSTRUMENT_FAILED;
+
+	return INSTRUMENT_SUCCESS;
+}
+
+static int unpatch_func(uint8_t *insn, char *name)
+{
+	patch_op op = {
+		.type          = PATCH_OP_UNINSTALL,
+		.addr.func_sym = name
+	};
+	if (patch_queue(0, &op) != PATCH_OK)
+		return INSTRUMENT_FAILED;
+
+	return INSTRUMENT_SUCCESS;
+}
+#else
 /*
  * Patch the instruction to the address as given for arguments.
  */
@@ -600,6 +630,7 @@ static int unpatch_func(uint8_t *insn, char *name)
 
 	return INSTRUMENT_SUCCESS;
 }
+#endif // HAVE_LIBPATCH
 
 static int unpatch_fentry_func(struct mcount_dynamic_info *mdi, struct sym *sym)
 {
