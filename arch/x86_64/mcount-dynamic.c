@@ -25,19 +25,7 @@ static const unsigned char patchable_clang_nop[] = { 0x0f, 0x1f, 0x44, 0x00, 0x0
 int setup_dynamic_trampoline(struct mcount_dynamic_info *mdi,
 			unsigned char *trampoline, size_t size)
 {
-	size_t gsize;
-	size_t trampoline_size = 16;
-
-	patch_generic_trampoline_size(&gsize);
-	if (gsize <= trampoline_size) {
-		if (patch_add_generic_trampoline(mdi->trampoline) == PATCH_OK) {
-			pr_dbg("setup generic trampoline at 0x%x (size %lu)\n", mdi->trampoline, gsize);
-			return 0;
-		}
-		else
-			pr_err("cannot add libpatch trampoline");
-	}
-	return -1;
+	return 0;
 }
 
 int mprotect_trampoline(struct mcount_dynamic_info *mdi)
