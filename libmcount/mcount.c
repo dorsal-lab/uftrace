@@ -1842,6 +1842,7 @@ unsigned long mcount_exit(long *retval)
 	return ret;
 }
 
+#if 0
 static int __cygprof_entry(unsigned long parent, unsigned long child)
 {
 	enum filter_result filtered;
@@ -1974,6 +1975,7 @@ static void cygprof_exit(unsigned long parent, unsigned long child)
 	__cygprof_exit(parent, child);
 	errno = saved_errno;
 }
+#endif
 
 static pthread_rwlock_t xray_patching_rwlock;
 
@@ -2492,6 +2494,7 @@ void __visible_default mcount_reset(void)
 	mcount_rstack_reset(mtdp);
 }
 
+#if 0
 void __visible_default __cyg_profile_func_enter(void *child, void *parent)
 {
 	cygprof_entry((unsigned long)parent, (unsigned long)child);
@@ -2503,6 +2506,7 @@ void __visible_default __cyg_profile_func_exit(void *child, void *parent)
 	cygprof_exit((unsigned long)parent, (unsigned long)child);
 }
 UFTRACE_ALIAS(__cyg_profile_func_exit);
+#endif
 
 #ifndef UNIT_TEST
 /*
